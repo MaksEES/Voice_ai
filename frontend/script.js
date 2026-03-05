@@ -1,4 +1,3 @@
-// DOM Elements
 const micBtn = document.getElementById('mic-toggle');
 const statusText = document.getElementById('status-text');
 const subStatus = document.getElementById('sub-status');
@@ -23,7 +22,6 @@ function updateTime() {
 setInterval(updateTime, 1000);
 updateTime();
 
-// Update System Stats from Python Backend
 async function updateStatsFromBackend() {
     if (window.pywebview && window.pywebview.api) {
         try {
@@ -66,7 +64,7 @@ async function startListening() {
     statusText.textContent = "Слушаю...";
     subStatus.textContent = "Я весь во внимании";
 
-    // Call Python Voice API (ASR)
+    //(ASR)
     if (window.pywebview && window.pywebview.api) {
         try {
             const result = await window.pywebview.api.listen_voice();
@@ -82,7 +80,6 @@ async function startListening() {
             stopListening();
         }
     } else {
-        // Fallback simulation
         setTimeout(() => {
             if (isListening) processCommand("Открой браузер");
         }, 3000);
@@ -126,7 +123,6 @@ async function processCommand(command) {
     }
 }
 
-// Navigation Buttons Logic
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelector('.nav-btn.active').classList.remove('active');
@@ -140,12 +136,10 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     });
 });
 
-// Dock Items Logic
 document.querySelectorAll('.dock-item').forEach(item => {
     item.addEventListener('click', () => {
         const title = item.getAttribute('title');
         addMessage(`Запуск приложения: ${title}`, 'bot');
-        // Actual calls are handled by inline onclick in HTML for dock items
     });
 });
 

@@ -1,28 +1,30 @@
 import re
 import os
+from dotenv import load_dotenv
 
-# Глобальные переменные для ИИ
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(project_root, '.env')
+load_dotenv(dotenv_path=env_path)
+
 client = None
-model_name = 'gemini-1.5-flash' # Новая стабильная модель
+model_name = 'gemini-1.5-flash' 
 use_new_sdk = False
 
-# Безопасная инициализация ИИ
 def init_ai():
     global client, use_new_sdk
-    api_key = "AIzaSyC5GT8PZnEVVhQl21bvBm0q0gHdl-8J8WM"
+    api_key = os.getenv("API_KEY")
     
     try:
-        # 1. Пробуем новый SDK (google-genai)
+        #SDK genai
         from google import genai
         client = genai.Client(api_key=api_key)
         use_new_sdk = True
         print("ИИ: Использован новый SDK (google-genai)")
     except Exception:
         try:
-            # 2. Пробуем старый SDK (google-generativeai)
+            #google-generativeai
             import google.generativeai as genai_old
             genai_old.configure(api_key=api_key)
-            # Для старого SDK используем проверенную модель
             client = genai_old.GenerativeModel('gemini-1.5-flash')
             use_new_sdk = False
             print("ИИ: Использован старый SDK (google-generativeai)")
@@ -31,7 +33,6 @@ def init_ai():
             client = None
 
 
-# Запускаем инициализацию при импорте модуля
 init_ai()
 
 class NLPProcessor:
@@ -74,12 +75,10 @@ class NLPProcessor:
                 prompt = f"Ты — интеллектуальный помощник Voice OS. Ответь коротко и ясно на запрос пользователя: {clean_text}"
                 
                 if use_new_sdk:
-                    # Новый SDK
                     try:
                         response = client.models.generate_content(model=model_name, contents=prompt)
                         return response.text
                     except Exception:
-                        # Если 1.5-flash недоступен, пробуем 1.0-pro (legacy)
                         response = client.models.generate_content(model='gemini-1.0-pro', contents=prompt)
                         return response.text
                 else:

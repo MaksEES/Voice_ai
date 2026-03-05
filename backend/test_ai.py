@@ -1,12 +1,14 @@
 import os
 import sys
+from dotenv import load_dotenv
 
-# Вставьте ваш ключ сюда для теста
-API_KEY = "AIzaSyC5GT8PZnEVVhQl21bvBm0q0gHdl-8J8WM"
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(project_root, '.env')
+load_dotenv(dotenv_path=env_path)
+API_KEY = os.getenv("API_KEY")
 
 print("--- ДИАГНОСТИКА GEMINI API ---")
 
-# 1. Проверка библиотек
 try:
     from google import genai
     print("[OK] Библиотека 'google-genai' найдена.")

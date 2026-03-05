@@ -23,7 +23,6 @@ body {
     overflow: hidden;
 }
 
-/* Wallpaper & Background Effects */
 .desktop-wallpaper {
     position: fixed;
     inset: 0;
@@ -86,7 +85,6 @@ body {
     }
 }
 
-/* Layout */
 .os-layout {
     display: flex;
     height: 100vh;
@@ -94,7 +92,6 @@ body {
     gap: 20px;
 }
 
-/* Sidebar */
 .os-sidebar {
     width: 84px;
     background: var(--glass);
@@ -154,14 +151,12 @@ body {
     transform: translateX(5px);
 }
 
-/* Main Workspace */
 .os-workspace {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 20px;
     height: calc(100vh - 40px);
-    /* 100vh minus padding */
     min-height: 0;
     overflow: hidden;
 }
@@ -214,7 +209,6 @@ body {
     border: 2px solid var(--accent);
 }
 
-/* Grid System */
 .content-grid {
     flex: 1;
     display: grid;
@@ -235,7 +229,6 @@ body {
     flex-direction: column;
 }
 
-/* Voice Hub */
 .voice-hub {
     align-items: center;
     justify-content: center;
@@ -305,7 +298,6 @@ body {
     }
 }
 
-/* Waveform Visualizer */
 .waveform {
     position: absolute;
     width: 100%;
@@ -403,7 +395,6 @@ body {
     color: white;
 }
 
-/* Side Panel Content */
 .side-panel {
     display: flex;
     flex-direction: column;
@@ -465,7 +456,6 @@ body {
 }
 
 
-/* Custom Scrollbar */
 .chat-container::-webkit-scrollbar {
     width: 6px;
 }
@@ -505,7 +495,6 @@ body {
 }
 
 
-/* Dock */
 .os-dock {
     height: 100px;
     display: flex;

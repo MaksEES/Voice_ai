@@ -19,34 +19,27 @@ except ImportError:
 class API:
     def __init__(self):
         self.nlp = NLPProcessor()
-        self.engine = None
-        if pyttsx3:
-            try:
-                self.engine = pyttsx3.init()
-                voices = self.engine.getProperty('voices')
-                for voice in voices:
-                    if "russian" in voice.name.lower():
-                        self.engine.setProperty('voice', voice.id)
-                        break
-            except Exception as e:
-                print(f"TTS Init Error: {e}")
+        self.engine = True if pyttsx3 else None
 
     def speak(self, text):
-        if self.engine:
-            def _speak():
-                try:
-                    # Реинициализация для каждого потока может быть надежнее в некоторых средах
-                    engine = pyttsx3.init()
-                    voices = engine.getProperty('voices')
-                    for voice in voices:
-                        if "russian" in voice.name.lower():
-                            engine.setProperty('voice', voice.id)
-                            break
-                    engine.say(text)
-                    engine.runAndWait()
-                except Exception as e:
-                    print(f"Speak Error: {e}")
-            threading.Thread(target=_speak).start()
+        if not pyttsx3:
+            return
+            
+        def _speak():
+            try:
+                engine = pyttsx3.init()
+                voices = engine.getProperty('voices')
+                for voice in voices:
+                    if "russian" in voice.name.lower():
+                        engine.setProperty('voice', voice.id)
+                        break
+                engine.say(text)
+                engine.runAndWait()
+                del engine
+            except Exception as e:
+                print(f"Speak Error: {e}")
+                
+        threading.Thread(target=_speak, daemon=True).start()
 
     def handle_command(self, text):
         intent, original = self.nlp.analyze(text)
@@ -127,7 +120,8 @@ class API:
 
 def run_app():
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    html_file = os.path.join(current_dir, 'index.html')
+    project_root = os.path.dirname(current_dir)
+    html_file = os.path.join(project_root, 'frontend', 'index.html')
     api = API()
     window = webview.create_window(
         'Voice OS Pro Professional', 
