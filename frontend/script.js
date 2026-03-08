@@ -12,7 +12,6 @@ const userTextDisplay = document.getElementById('user-text-display');
 
 let isListening = false;
 
-// 1. Часы и Дата
 function updateTime() {
     const now = new Date();
     const hours = String(now.getHours()).padStart(2, '0');
@@ -26,12 +25,10 @@ function updateTime() {
 setInterval(updateTime, 1000);
 updateTime();
 
-// 2. Панель истории чатов (открытие/закрытие)
 sidebarToggle.addEventListener('click', () => {
     sidebar.classList.toggle('open');
 });
 
-// 3. Логика истории чатов (по первому запросу)
 let chats = JSON.parse(localStorage.getItem('chats') || '[]');
 let currentChatIndex = chats.length > 0 ? chats.length - 1 : -1;
 
@@ -45,16 +42,14 @@ function renderChats() {
         const chatItem = document.createElement('div');
         chatItem.className = 'chat-session' + (index === currentChatIndex ? ' active' : '');
 
-        // Заголовок (Тема = первый запрос)
         const title = document.createElement('div');
         title.className = 'chat-title';
         title.textContent = chat.title || 'Новый чат';
         title.onclick = () => {
             currentChatIndex = index;
-            renderChats(); // Пересоздать с раскрытым выбранным чатом
+            renderChats();
         };
 
-        // Окно с сообщениями
         const msgsBlock = document.createElement('div');
         msgsBlock.className = 'chat-messages';
         if (index !== currentChatIndex) {
@@ -70,31 +65,25 @@ function renderChats() {
 
         chatItem.appendChild(title);
         chatItem.appendChild(msgsBlock);
-        chatHistoryContainer.prepend(chatItem); // Новые чаты сверху
+        chatHistoryContainer.prepend(chatItem);
     });
 }
 
-// Новый чат
 newChatBtn.addEventListener('click', () => {
     currentChatIndex = -1;
-    // Сбрасываем субтитры
     userTextWindow.style.opacity = '0';
     renderChats();
-    // Открываем панель если она закрыта
     if (!sidebar.classList.contains('open')) {
         sidebar.classList.add('open');
     }
 });
 
-// Добавление сообщения в историю
 function addMessage(text, sender) {
     if (currentChatIndex === -1 || !chats[currentChatIndex]) {
-        // Создаем новый чат. Если пишет пользователь, это название чата
         const title = sender === 'user' ? text : 'Голосовой чат';
         chats.push({ title: title, messages: [] });
         currentChatIndex = chats.length - 1;
     } else if (chats[currentChatIndex].messages.length === 0 && sender === 'user') {
-        // Если это все еще пустой чат
         chats[currentChatIndex].title = text;
     }
 
@@ -102,26 +91,20 @@ function addMessage(text, sender) {
     saveChats();
     renderChats();
 
-    // Показываем текст в маленьком окне снизу
     if (sender === 'user') {
         userTextDisplay.textContent = `Вы сказали: "${text}"`;
         userTextWindow.style.opacity = '1';
     } else if (sender === 'bot') {
-        // Дополнительно можно показывать ответ бота, или оставлять слова пользователя
-        // userTextDisplay.textContent = `Ответ: "${text}"`;
     }
 }
 
-// Инициализация при загрузке
 if (chats.length === 0) {
-    // Дефолтный первый чат если все пусто
     chats.push({ title: 'Первый запуск', messages: [{ text: 'Привет! Я тестовая система. Как я могу вам помочь?', sender: 'bot' }] });
     currentChatIndex = 0;
     saveChats();
 }
 renderChats();
 
-// 4. Голосовое взаимодействие
 micBtn.addEventListener('click', async () => {
     isListening = !isListening;
 
@@ -156,7 +139,6 @@ async function startListening() {
             stopListening();
         }
     } else {
-        // Мок для теста без бэкенда
         setTimeout(() => {
             if (isListening) processCommand("Открой браузер");
         }, 3000);

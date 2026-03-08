@@ -85,7 +85,6 @@ body {
     }
 }
 
-/* Sidebar Toggle */
 .sidebar-toggle-btn {
     position: absolute;
     top: 15px;
@@ -117,11 +116,9 @@ body {
     gap: 10px;
 }
 
-/* Sidebar for History */
 .sidebar-history {
     position: absolute;
     left: -320px;
-    /* Скрыто по умолчанию */
     top: 70px;
     bottom: 10px;
     width: 300px;
@@ -206,7 +203,6 @@ body {
     background: var(--accent);
 }
 
-/* Chat Sessions styled as Accordion */
 .chat-session {
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
@@ -246,7 +242,6 @@ body {
     overflow-y: auto;
 }
 
-/* Individual Messages */
 .msg {
     padding: 10px 14px;
     border-radius: 16px;
@@ -270,7 +265,6 @@ body {
     color: white;
 }
 
-/* Main Workspace */
 .os-workspace {
     flex: 1;
     display: flex;
@@ -319,6 +313,8 @@ body {
 }
 
 .voice-hub {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
@@ -484,7 +480,6 @@ body {
     color: white;
 }
 
-/* User Subtitle Text Window */
 .user-text-window {
     width: 100%;
     min-height: 50px;
