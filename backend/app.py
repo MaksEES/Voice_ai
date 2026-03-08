@@ -4,6 +4,8 @@ import sys
 import subprocess
 import threading
 import time
+import requests
+import base64
 from nlp_engine import NLPProcessor
 
 try:
@@ -45,7 +47,30 @@ class API:
         intent, original = self.nlp.analyze(text)
         response_text = self.nlp.get_response(intent, original)
         
-        self.speak(response_text)
+        audio_base64 = None
+        voice_api_key = os.getenv("Voice_API")
+        if voice_api_key:
+            try:
+                url = "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb"
+                headers = {
+                    "Accept": "audio/mpeg",
+                    "Content-Type": "application/json",
+                    "xi-api-key": voice_api_key.strip('"')
+                }
+                data = {
+                    "text": response_text,
+                    "model_id": "eleven_multilingual_v2"
+                }
+                res = requests.post(url, json=data, headers=headers)
+                if res.status_code == 200:
+                    audio_base64 = base64.b64encode(res.content).decode('utf-8')
+                else:
+                    print(f"ElevenLabs API Error: {res.text}")
+            except Exception as e:
+                print(f"ElevenLabs Request Error: {e}")
+                
+        if not audio_base64:
+            self.speak(response_text)
         
         if intent == "OPEN_BROWSER":
             self.open_browser()
@@ -62,7 +87,8 @@ class API:
             
         return {
             "intent": intent,
-            "response": response_text
+            "response": response_text,
+            "audio_base64": audio_base64
         }
 
     def open_folder(self, folder_type):

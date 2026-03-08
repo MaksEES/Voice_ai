@@ -183,6 +183,10 @@ async function processCommand(command) {
             const result = await window.pywebview.api.handle_command(command);
             setTimeout(() => {
                 addMessage(result.response, 'bot');
+                if (result.audio_base64) {
+                    const audio = new Audio("data:audio/mp3;base64," + result.audio_base64);
+                    audio.play();
+                }
                 stopListening();
             }, 800);
         } catch (e) {
