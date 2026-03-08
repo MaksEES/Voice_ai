@@ -44,7 +44,10 @@ class NLPProcessor:
             "GET_STATS": [r"(покажи|какая) (статистика|нагрузка|состояние)", r"как дела у системы"],
             "YOUTUBE": [r"(найди|включи|открой) на (ютубе|youtube)", r"видео про (.+)"],
             "SEARCH": [r"(найди|поищи) в (интернете|гугле|сети) (.+)", r"что такое (.+)"],
-        }
+            "OPEN_PICTURES": [r"открой (фото|картинки|галерею)", r"открой папку с картинками"],
+            "OPEN_MUSIC": [r"открой (музыку|музыка)", r"открой папку с музыкой"],
+            "OPEN_DOWNLOADS": [r"открой (загрузки|скачанное)", r"открой папку загрузок"],
+            }
 
     def analyze(self, text):
         text = text.lower().strip()
@@ -64,6 +67,9 @@ class NLPProcessor:
             "GET_STATS": "Проверяю состояние ресурсов... Система работает стабильно.",
             "YOUTUBE": f"Ищу '{original_text}' на YouTube. Сейчас откроется видео.",
             "SEARCH": f"Ищу информацию про '{original_text}' в интернете.",
+            "OPEN_PICTURES": "Открываю вашу галерею.",
+            "OPEN_MUSIC": "Открываю папку с музыкой.",
+            "OPEN_DOWNLOADS": "Открываю папку загрузок.",
         }
 
         if intent in system_responses:
@@ -79,10 +85,9 @@ class NLPProcessor:
                         response = client.models.generate_content(model=model_name, contents=prompt)
                         return response.text
                     except Exception:
-                        response = client.models.generate_content(model='gemini-1.0-pro', contents=prompt)
+                        response = client.models.generate_content(model='gemini-1.5-pro', contents=prompt)
                         return response.text
                 else:
-                    # Старый SDK
                     response = client.generate_content(prompt)
                     return response.text
             except Exception as e:

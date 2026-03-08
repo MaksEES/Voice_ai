@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice OS Pro - Интеллектуальная Система</title>
+    <title>Test</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,39 +21,24 @@
         </div>
     </div>
 
+    <!-- Кнопка вызова боковой панели -->
+    <button id="sidebar-toggle" class="sidebar-toggle-btn" title="История чатов">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+    </button>
+
     <div class="os-layout">
-        <aside class="os-sidebar">
-            <div class="brand">
-                <div class="brand-logo">V</div>
+        <aside class="sidebar-history glass-card" id="sidebar">
+            <div class="sidebar-header">
+                <h2>История чатов</h2>
+                <button id="new-chat-btn" class="new-chat-btn" title="Новый чат">+</button>
             </div>
-            <nav class="os-nav">
-                <button class="nav-btn active" data-tooltip="Главная">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                    </svg>
-                </button>
-                <button class="nav-btn" data-tooltip="Статистика">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="20" x2="18" y2="10"></line>
-                        <line x1="12" y1="20" x2="12" y2="4"></line>
-                        <line x1="6" y1="20" x2="6" y2="14"></line>
-                    </svg>
-                </button>
-                <button class="nav-btn" data-tooltip="Сообщения">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                    </svg>
-                </button>
-                <button class="nav-btn" data-tooltip="Настройки">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path
-                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
-                        </path>
-                    </svg>
-                </button>
-            </nav>
+            <div class="chat-container" id="chat-history">
+                <!-- Сюда динамически добавляются сгруппированные чаты -->
+            </div>
         </aside>
 
         <main class="os-workspace">
@@ -62,81 +47,42 @@
                     <span class="date" id="current-date">Четверг, 29 Января</span>
                     <span class="clock" id="current-time">09:31</span>
                 </div>
-                <div class="user-group">
-                    <div class="weather-pill">
-                        <span class="weather-icon">☀️</span>
-                        <span class="weather-temp">+24°C</span>
-                    </div>
-                    <div class="user-avatar">
-                        <img src="https://ui-avatars.com/api/?name=User&background=4facfe&color=fff" alt="User">
-                    </div>
-                </div>
             </header>
 
-            <div class="content-grid">
-                <div class="glass-card voice-hub">
-                    <div class="visualizer-container" id="visualizer">
-                        <div class="waveform">
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                            <div class="bar"></div>
-                        </div>
-                        <div class="main-orb"></div>
-                        <div class="glow-sphere"></div>
-                    </div>
-                    <div class="voice-labels">
-                        <h1 id="status-text">Система готова</h1>
-                        <p id="sub-status">Скажите команду или нажмите кнопку</p>
-                    </div>
-                    <button class="prime-mic-btn" id="mic-toggle">
-                        <div class="mic-inner">🎤</div>
-                        <div class="mic-wave"></div>
-                    </button>
-                </div>
-
-                <div class="side-panel">
-                    <div class="glass-card mini-stats">
-                        <h2>Система</h2>
-                        <div class="stat-progress">
-                            <div class="label">CPU <span>32%</span></div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" id="cpu-fill" style="width: 32%"></div>
+            <div class="center-stage">
+                <div class="voice-hub-wrapper">
+                    <div class="glass-card voice-hub">
+                        <div class="visualizer-container" id="visualizer">
+                            <div class="waveform">
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
                             </div>
+                            <div class="main-orb"></div>
+                            <div class="glow-sphere"></div>
                         </div>
-                        <div class="stat-progress">
-                            <div class="label">RAM <span>58%</span></div>
-                            <div class="bar-bg">
-                                <div class="bar-fill" id="ram-fill" style="width: 58%"></div>
-                            </div>
+                        <div class="voice-labels">
+                            <h1 id="status-text">Система готова</h1>
+                            <p id="sub-status">Скажите команду</p>
                         </div>
+                        <button class="prime-mic-btn" id="mic-toggle">
+                            <div class="mic-inner">🎤</div>
+                            <div class="mic-wave"></div>
+                        </button>
                     </div>
 
-                    <div class="glass-card chat-log">
-                        <h2>История</h2>
-                        <div class="chat-container" id="chat-history">
-                            <div class="msg bot">Привет! Я Voice OS Pro. Как я могу вам помочь?</div>
-                        </div>
+                    <!-- Окно субтитров -->
+                    <div class="glass-card user-text-window" id="user-text-window" style="opacity: 0;">
+                        <p id="user-text-display">...</p>
                     </div>
                 </div>
             </div>
-
-            <footer class="os-dock">
-                <div class="dock-container">
-                    <button class="dock-item" title="Браузер" onclick="window.pywebview.api.open_browser()">🌐</button>
-                    <button class="dock-item" title="Калькулятор"
-                        onclick="window.pywebview.api.open_app('calc.exe')">🧮</button>
-                    <button class="dock-item" title="Блокнот"
-                        onclick="window.pywebview.api.open_app('notepad.exe')">📝</button>
-                    <button class="dock-item" title="Картинки">🖼️</button>
-                    <button class="dock-item" title="Музыка">🎵</button>
-                </div>
-            </footer>
         </main>
     </div>
 

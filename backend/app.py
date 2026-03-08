@@ -124,10 +124,10 @@ def run_app():
     html_file = os.path.join(project_root, 'frontend', 'index.html')
     api = API()
     window = webview.create_window(
-        'Voice OS Pro Professional', 
+        'Test', 
         html_file, 
         js_api=api,
-        width=1280, 
+        width=600, 
         height=850,
         background_color='#070b14'
     )
