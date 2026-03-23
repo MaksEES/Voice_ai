@@ -22,7 +22,6 @@ def init_ai():
         print("ИИ: Использован новый SDK (google-genai)")
     except Exception:
         try:
-            #google-generativeai
             import google.generativeai as genai_old
             genai_old.configure(api_key=api_key)
             client = genai_old.GenerativeModel('gemini-1.5-flash')

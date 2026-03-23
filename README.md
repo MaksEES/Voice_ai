@@ -16,9 +16,10 @@ A chatbot application that uses the Google Gemini API for natural language proce
     ```
 
 3.  **Environment Variables:**
-    Create a `.env` file in the root directory and add your Google Gemini API key:
+    Create a `.env` file in the root directory and add your Google Gemini and ElevenLabs API key:
     ```env
     API_KEY="your_api_key_here"
+    Voice_API_KEY="your_elevenlabs_api_key_here"
     ```
 
 5.  **Run the application:**

@@ -105,13 +105,80 @@ if (chats.length === 0) {
 }
 renderChats();
 
-micBtn.addEventListener('click', async () => {
-    isListening = !isListening;
+// === Фоновое прослушивание wake word ===
+let isBackgroundListening = false;
 
+async function backgroundListen() {
+    if (isListening) return; // ручной режим активен
+    isBackgroundListening = true;
+
+    if (!(window.pywebview && window.pywebview.api)) {
+        isBackgroundListening = false;
+        return;
+    }
+
+    try {
+        const result = await window.pywebview.api.listen_voice();
+        if (isListening) { isBackgroundListening = false; return; }
+
+        if (result.status === "wake") {
+            // Wake word обнаружен! Активируем UI и слушаем команду
+            isListening = true;
+            isBackgroundListening = false;
+            const voiceHub = document.querySelector('.voice-hub');
+            if (voiceHub) voiceHub.classList.add('active');
+            statusText.textContent = "Слушаю...";
+            subStatus.textContent = "Говорите команду";
+            userTextDisplay.textContent = "Я вас слушаю...";
+            userTextWindow.style.opacity = '1';
+            addMessage(result.text, 'bot');
+            window.pywebview.api.speak(result.text);
+            setTimeout(() => { startListening(); }, 300);
+        } else if (result.status === "success" && result.text) {
+            // Команда с wake word в одной фразе ("Макс открой калькулятор")
+            isListening = true;
+            isBackgroundListening = false;
+            const voiceHub = document.querySelector('.voice-hub');
+            if (voiceHub) voiceHub.classList.add('active');
+            processCommand(result.text);
+        } else {
+            // ignore — перезапускаем фоновое прослушивание
+            isBackgroundListening = false;
+            if (!isListening) {
+                setTimeout(() => { backgroundListen(); }, 300);
+            }
+        }
+    } catch (e) {
+        console.error("Background listen error:", e);
+        isBackgroundListening = false;
+        if (!isListening) {
+            setTimeout(() => { backgroundListen(); }, 1000);
+        }
+    }
+}
+
+// Запуск фонового прослушивания при старте приложения (кнопка микрофона выключена)
+window.addEventListener('pywebviewready', () => {
+    setTimeout(() => { backgroundListen(); }, 500);
+});
+
+// === Кнопка микрофона (ручной режим) ===
+micBtn.addEventListener('click', async () => {
     if (isListening) {
-        await startListening();
-    } else {
         stopListening();
+        // Перезапускаем фоновое прослушивание через паузу
+        setTimeout(() => { backgroundListen(); }, 500);
+    } else {
+        // Остановить фоновое прослушивание если оно активно
+        if (isBackgroundListening && window.pywebview && window.pywebview.api) {
+            window.pywebview.api.stop_listening();
+        }
+        isListening = true;
+        // Пропускаем wake word — пользователь сам нажал кнопку
+        if (window.pywebview && window.pywebview.api) {
+            window.pywebview.api.set_awake();
+        }
+        await startListening();
     }
 });
 
@@ -127,16 +194,29 @@ async function startListening() {
     if (window.pywebview && window.pywebview.api) {
         try {
             const result = await window.pywebview.api.listen_voice();
+            if (!isListening) return;
 
-            if (result.status === "success") {
+            if (result.status === "success" && result.text) {
                 processCommand(result.text);
-            } else {
+            } else if (result.status === "wake") {
+                addMessage(result.text, 'bot');
+                window.pywebview.api.speak(result.text);
+                if (isListening) {
+                    setTimeout(() => { startListening(); }, 300);
+                }
+            } else if (result.status === "ignore") {
+                if (isListening) {
+                    setTimeout(() => { startListening(); }, 300);
+                }
+            } else if (result.status === "error") {
                 addMessage(`Ошибка: ${result.message}`, 'bot');
                 stopListening();
+                setTimeout(() => { backgroundListen(); }, 500);
             }
         } catch (e) {
             console.error("Voice API Error:", e);
             stopListening();
+            setTimeout(() => { backgroundListen(); }, 500);
         }
     } else {
         setTimeout(() => {
@@ -146,6 +226,9 @@ async function startListening() {
 }
 
 function stopListening() {
+    if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.stop_listening();
+    }
     const voiceHub = document.querySelector('.voice-hub');
     if (voiceHub) voiceHub.classList.remove('active');
 
@@ -170,11 +253,14 @@ async function processCommand(command) {
                     audio.play();
                 }
                 stopListening();
+                // После выполнения команды — возвращаемся к фоновому прослушиванию
+                setTimeout(() => { backgroundListen(); }, 500);
             }, 800);
         } catch (e) {
             console.error("NLP Error:", e);
             addMessage("Произошла ошибка связи с ядром.", 'bot');
             stopListening();
+            setTimeout(() => { backgroundListen(); }, 500);
         }
     } else {
         setTimeout(() => {
