@@ -12,7 +12,7 @@ A chatbot application that uses the Google Gemini API for natural language proce
 
 2.  **Install Dependencies:**
     ```bash
-    pip install pywebview google-genai psutil python-dotenv pyttsx3 speechrecognition pyaudio
+    pip install pywebview google-genai psutil python-dotenv pyttsx3 speechrecognition pyaudio faster-whisper
     ```
 
 3.  **Environment Variables:**

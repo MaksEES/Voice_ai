@@ -15,7 +15,7 @@ try:
     client = genai.Client(api_key=API_KEY)
     try:
         print("Попытка запроса через новый SDK...")
-        response = client.models.generate_content(model='gemini-1.5-flash', contents="Привет, протестируй связь.")
+        response = client.models.generate_content(model='gemini-2.5-flash', contents="Привет, протестируй связь.")
         print(f"[УСПЕХ] Ответ ИИ: {response.text}")
     except Exception as e:
         print(f"[ОШИБКА] Новый SDK не смог получить ответ: {e}")

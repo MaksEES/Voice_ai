@@ -216,20 +216,52 @@ body {
     background: rgba(79, 172, 254, 0.05);
 }
 
+.chat-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.03);
+    transition: background 0.2s;
+}
+
+.chat-title-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
 .chat-title {
     padding: 12px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    background: rgba(255, 255, 255, 0.03);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     user-select: none;
+    flex: 1;
+    min-width: 0;
 }
 
-.chat-title:hover {
-    background: rgba(255, 255, 255, 0.08);
+.chat-delete-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 14px;
+    cursor: pointer;
+    padding: 8px 12px;
+    transition: color 0.2s, transform 0.2s;
+    flex-shrink: 0;
+}
+
+.chat-delete-btn:hover {
+    color: #ef4444;
+    transform: scale(1.2);
+}
+
+.chat-meta {
+    padding: 4px 12px 8px;
+    font-size: 11px;
+    color: var(--text-low);
+    opacity: 0.6;
 }
 
 .chat-messages {
