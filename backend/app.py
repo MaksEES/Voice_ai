@@ -9,6 +9,7 @@ import requests
 import base64
 from nlp_engine import NLPProcessor
 from database import init_db, create_session, add_message, update_session_title, get_all_sessions, get_session_messages, delete_session, get_command_frequencies
+from app_resolver import AppResolver
 
 try:
     import pyttsx3
@@ -101,6 +102,7 @@ class API:
         self.is_awake = False
         self.current_session_id = None
         init_db()
+        self.app_resolver = AppResolver()
 
     def stop_listening(self):
         self.force_stop = True
@@ -292,7 +294,9 @@ class API:
         if intent not in self._HANDLED_INTENTS:
             command = text.lower()
             if "открой" in command:
-                self.open_app_by_name(command)
+                result = self.open_app_by_name(command)
+                if result:
+                    response_text = result
             if "напечатай" in command:
                 result = self.type_text(command)
                 if result:
@@ -310,10 +314,13 @@ class API:
         
     def open_app_by_name(self, command):
          parts = command.split("открой", 1)
-         if len(parts) > 1:
-              app_name = parts[1].strip()
-              if app_name:
-                  self.open_app(f"{app_name}.exe")
+         if len(parts) <= 1:
+             return None
+         app_name = parts[1].strip()
+         if not app_name:
+             return None
+         ok, msg = self.app_resolver.launch(app_name)
+         return msg
                   
     def type_text(self, command):
          try:

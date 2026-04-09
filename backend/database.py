@@ -2,16 +2,13 @@ import sqlite3
 import os
 from datetime import datetime
 
-
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_history.db")
-
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
-
 
 def init_db():
     conn = get_connection()
@@ -40,7 +37,6 @@ def init_db():
     conn.close()
     print(f"[DB] База данных инициализирована: {DB_PATH}")
 
-
 def create_session(title="Новый чат"):
     conn = get_connection()
     cursor = conn.cursor()
@@ -52,7 +48,6 @@ def create_session(title="Новый чат"):
     conn.commit()
     conn.close()
     return session_id
-
 
 def add_message(session_id, sender, text, intent=None):
     conn = get_connection()
@@ -72,7 +67,6 @@ def add_message(session_id, sender, text, intent=None):
     conn.close()
     return message_id
 
-
 def update_session_title(session_id, title):
     conn = get_connection()
     cursor = conn.cursor()
@@ -82,7 +76,6 @@ def update_session_title(session_id, title):
     )
     conn.commit()
     conn.close()
-
 
 def get_all_sessions():
     conn = get_connection()
@@ -103,7 +96,6 @@ def get_all_sessions():
     conn.close()
     return sessions
 
-
 def get_session_messages(session_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -115,14 +107,12 @@ def get_session_messages(session_id):
     conn.close()
     return messages
 
-
 def delete_session(session_id):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
     conn.commit()
     conn.close()
-
 
 def get_command_frequencies():
     conn = get_connection()
