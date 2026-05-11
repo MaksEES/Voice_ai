@@ -5,8 +5,9 @@ import json
 import threading
 from difflib import SequenceMatcher
 
-# Русский на английский
+# Алиасы приложений: русский/казахский → английский
 RU_ALIASES = {
+    # Русский
     "телеграм": "telegram",
     "телеграмм": "telegram",
     "дискорд": "discord",
@@ -60,6 +61,17 @@ RU_ALIASES = {
     "кс 2": "Counter-Strike 2",
     "cs2": "Counter-Strike 2",
     "виндхоук": "windhawk",
+    # Қазақша (казахский)
+    "браузерді": "chrome",
+    "блокнотты": "notepad",
+    "калькуляторды": "calculator",
+    "ойындар": "steam",
+    "сурет": "paint",
+    "пошта": "mail",
+    "ауа райы": "weather",
+    "сағат": "clock",
+    "камераны": "camera",
+    "терминалды": "terminal",
 }
 
 

@@ -22,46 +22,101 @@ except ImportError:
     sr = None
     
 _whisper_model = None
-"""Исправление лексических ошибок"""
-WHISPER_PROMPT = (
-    "Макс, открой браузер. Открой калькулятор. "
-    "Напечатай текст. Что на экране? Закрой окно. "
-    "Найди на ютубе. Поищи в интернете. "
-    "Открой блокнот. Открой музыку. Открой загрузки. "
-    "Открой фото. Открой картинки."
-)
+"""Исправление лексических ошибок — мультиязычные промпты и коррекции"""
+WHISPER_PROMPTS = {
+    "ru": (
+        "Макс, открой браузер. Открой калькулятор. "
+        "Напечатай текст. Что на экране? Закрой окно. "
+        "Найди на ютубе. Поищи в интернете. "
+        "Открой блокнот. Открой музыку. Открой загрузки. "
+        "Открой фото. Открой картинки."
+    ),
+    "en": (
+        "Max, open browser. Open calculator. "
+        "Type text. What's on the screen? Close window. "
+        "Search on YouTube. Search the internet. "
+        "Open notepad. Open music. Open downloads. "
+        "Open photos. Open pictures."
+    ),
+    "kk": (
+        "Макс, браузерді аш. Калькуляторды аш. "
+        "Мәтін жаз. Экранда не бар? Терезені жап. "
+        "YouTube-тен іздеу. Интернеттен іздеу. "
+        "Блокнотты аш. Музыканы аш. Жүктеулерді аш."
+    ),
+}
 
 WHISPER_CORRECTIONS = {
-    "макса": "макс",
-    "максим": "макс",
-    "max": "макс",
-    "максу": "макс",
-    "мэкс": "макс",
-    "калькулято": "калькулятор",
-    "блокно": "блокнот",
-    "блакнот": "блокнот",
-    "гугло": "гугл",
-    "гугол": "гугл",
-    "закрыть": "закрой",
-    "открыть": "открой",
-    "запустить": "запусти",
-    "включить": "включи",
-    "найти": "найди",
-    "напечатать": "напечатай",
-    "загрузка": "загрузки",
-    "музыка": "музыку",
-    "бразуер": "браузер",
-    "бруазер": "браузер",
-    "брауер": "браузер",
-    "ютуб": "ютубе",
-    "ютюб": "ютубе",
+    "ru": {
+        "макса": "макс",
+        "максим": "макс",
+        "max": "макс",
+        "максу": "макс",
+        "мэкс": "макс",
+        "калькулято": "калькулятор",
+        "блокно": "блокнот",
+        "блакнот": "блокнот",
+        "гугло": "гугл",
+        "гугол": "гугл",
+        "закрыть": "закрой",
+        "открыть": "открой",
+        "запустить": "запусти",
+        "включить": "включи",
+        "найти": "найди",
+        "напечатать": "напечатай",
+        "загрузка": "загрузки",
+        "музыка": "музыку",
+        "бразуер": "браузер",
+        "бруазер": "браузер",
+        "брауер": "браузер",
+        "ютуб": "ютубе",
+        "ютюб": "ютубе",
+    },
+    "en": {
+        "max": "макс",
+        "macs": "макс",
+        "marks": "макс",
+        "maks": "макс",
+        "opn": "open",
+        "brawser": "browser",
+        "calculater": "calculator",
+    },
+    "kk": {
+        "макс": "макс",
+        "максе": "макс",
+        "мақс": "макс",
+        "ашу": "аш",
+        "жабу": "жап",
+    },
 }
-def _correct_text(text):
+
+"""Ключевые слова wake-word на разных языках"""
+WAKE_WORDS = {
+    "ru": ["макс"],
+    "en": ["max", "macs", "marks"],
+    "kk": ["макс", "мақс"],
+}
+
+def _correct_text(text, lang="ru"):
+    corrections = WHISPER_CORRECTIONS.get(lang, WHISPER_CORRECTIONS["ru"])
     words = text.split()
     corrected = []
     for word in words:
-        corrected.append(WHISPER_CORRECTIONS.get(word, word))
+        corrected.append(corrections.get(word, word))
     return " ".join(corrected)
+
+def _detect_wake_word(text_clean, lang=None):
+    """Проверяет наличие wake-word в тексте на любом языке.
+    Возвращает (found: bool, rest_command: str)"""
+    # Если язык известен — ищем в его словаре, иначе во всех
+    langs_to_check = [lang] if lang and lang in WAKE_WORDS else WAKE_WORDS.keys()
+    for check_lang in langs_to_check:
+        for ww in WAKE_WORDS[check_lang]:
+            if ww in text_clean:
+                parts = text_clean.split(ww, 1)
+                rest = parts[1].strip() if len(parts) > 1 else ""
+                return True, rest
+    return False, ""
 
 """Оптимизирование под каждый пк"""
 def _init_whisper():
@@ -82,7 +137,7 @@ def _init_whisper():
     for device, compute_type, label in device_chain:
         try:
             print(f"[Whisper] Пробую: {label}...")
-            _whisper_model = WhisperModel("medium", device=device, compute_type=compute_type)
+            _whisper_model = WhisperModel("small", device=device, compute_type=compute_type)
             print(f"[Whisper] ✓ Загружено: {label}")
             return
         except Exception as e:
@@ -101,6 +156,8 @@ class API:
         self.force_stop = False
         self.is_awake = False
         self.current_session_id = None
+        self.current_language = None  # None = авто-определение, "ru"/"en"/"kk" = фиксированный
+        self.detected_language = "ru"  # последний определённый язык
         init_db()
         self.app_resolver = AppResolver()
 
@@ -109,6 +166,17 @@ class API:
 
     def set_awake(self):
         self.is_awake = True
+
+    def set_language(self, lang_code):
+        """Установить язык распознавания: 'ru', 'en', 'kk' или None (авто)"""
+        if lang_code in ("ru", "en", "kk", None, "auto"):
+            self.current_language = None if lang_code == "auto" else lang_code
+            print(f"[Lang] Язык установлен: {self.current_language or 'авто'}")
+            return {"status": "ok", "language": self.current_language or "auto"}
+        return {"status": "error", "message": f"Неизвестный язык: {lang_code}"}
+
+    def get_language(self):
+        return {"current": self.current_language or "auto", "detected": self.detected_language}
 
     def speak(self, text):
         if not pyttsx3:
@@ -185,7 +253,14 @@ class API:
         "OPEN_MUSIC", "OPEN_DOWNLOADS", "YOUTUBE", "SEARCH", "GET_STATS",
     }
     """Совмещение команд"""
-    _SPLIT_WORDS = [" а также ", " а потом ", " потом ", " затем ", " после этого ", " и ещё ", " плюс "]
+    _SPLIT_WORDS = [
+        # Русский
+        " а также ", " а потом ", " потом ", " затем ", " после этого ", " и ещё ", " плюс ",
+        # English
+        " and then ", " then ", " also ", " after that ",
+        # Қазақша
+        " содан кейін ", " сонымен қатар ", " сосын ",
+    ]
 
     def handle_command(self, text):
         sub_commands = self._split_commands(text)
@@ -242,10 +317,16 @@ class API:
                     print(f"[CMD] Мульти-команда ({len(parts)}): {parts}")
                     return parts[:3]
 
-        if " и " in text_lower:
-            parts = text_lower.split(" и ", 2)
+        # Разделение по "и" / "and" / "және"
+        for conj in [" и ", " and ", " және "]:
+            if conj not in text_lower:
+                continue
+            parts = text_lower.split(conj, 2)
             command_verbs = ["открой", "запусти", "включи", "закрой", "найди",
-                           "поищи", "напечатай", "покажи", "загрузи"]
+                           "поищи", "напечатай", "покажи", "загрузи",
+                           "open", "launch", "start", "close", "find",
+                           "search", "type", "show",
+                           "аш", "қос", "жап", "іздеу", "тап", "жаз"]
             valid_parts = []
             for p in parts:
                 p = p.strip()
@@ -269,8 +350,9 @@ class API:
         return [text]
 
     def _execute_single_command(self, text):
+        lang = self.detected_language or "ru"
         intent, original = self.nlp.analyze(text)
-        response_text = self.nlp.get_response(intent, original)
+        response_text = self.nlp.get_response(intent, original, lang)
 
         if intent == "OPEN_BROWSER":
             self.open_browser()
@@ -293,19 +375,20 @@ class API:
 
         if intent not in self._HANDLED_INTENTS:
             command = text.lower()
-            if "открой" in command:
+            # Мультиязычные глаголы команд
+            if any(v in command for v in ["открой", "open", "аш"]):
                 result = self.open_app_by_name(command)
                 if result:
                     response_text = result
-            if "напечатай" in command:
+            if any(v in command for v in ["напечатай", "type", "жаз"]):
                 result = self.type_text(command)
                 if result:
                     response_text = result
-            if "что на экране" in command:
+            if any(p in command for p in ["что на экране", "what's on screen", "what is on screen", "экранда не бар"]):
                 result = self.describe_screen()
                 if result:
                     response_text = result
-            if "закрой" in command:
+            if any(v in command for v in ["закрой", "close", "жап"]):
                 result = self.close_window(command)
                 if result:
                     response_text = result
@@ -313,10 +396,15 @@ class API:
         return {"intent": intent, "response": response_text}
         
     def open_app_by_name(self, command):
-         parts = command.split("открой", 1)
-         if len(parts) <= 1:
-             return None
-         app_name = parts[1].strip()
+         # Мультиязычные глаголы для извлечения имени приложения
+         open_verbs = ["открой", "запусти", "включи", "open", "launch", "start", "run", "аш", "қос", "іске қос"]
+         app_name = None
+         for verb in open_verbs:
+             if verb in command:
+                 parts = command.split(verb, 1)
+                 if len(parts) > 1 and parts[1].strip():
+                     app_name = parts[1].strip()
+                     break
          if not app_name:
              return None
          ok, msg = self.app_resolver.launch(app_name)
@@ -579,42 +667,55 @@ class API:
             
             audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
+            # Определяем язык: фиксированный или авто
+            whisper_lang = self.current_language  # None = авто-определение
+            whisper_prompt = WHISPER_PROMPTS.get(whisper_lang, None) if whisper_lang else None
+
+            segments_list = []
             segments, info = _whisper_model.transcribe(
                 audio_np,
-                language="ru",
+                language=whisper_lang,
                 vad_filter=True,
-                beam_size=7,
-                initial_prompt=WHISPER_PROMPT,
+                beam_size=5,
+                initial_prompt=whisper_prompt,
                 condition_on_previous_text=False,
                 no_speech_threshold=0.5,
                 compression_ratio_threshold=2.4,
             )
-            text = "".join([segment.text for segment in segments]).strip()
+            for segment in segments:
+                segments_list.append(segment.text)
+            text = "".join(segments_list).strip()
+
+            # Определённый язык
+            detected_lang = getattr(info, 'language', 'ru') or 'ru'
+            self.detected_language = detected_lang
+            print(f"[Whisper] Язык: {detected_lang} (уверенность: {getattr(info, 'language_probability', 0):.0%})")
 
             if not text:
                return {"status": "ignore", "text": ""}
             
             command = text.lower()
-            command = _correct_text(command)
-            print(f"Распознано: {command}")
+            command = _correct_text(command, detected_lang)
+            print(f"Распознано [{detected_lang}]: {command}")
             
             command_clean = command.translate(str.maketrans('', '', string.punctuation))
             
             if not getattr(self, "is_awake", False):
-                 if "макс" in command_clean:
+                 found, rest_command = _detect_wake_word(command_clean, detected_lang)
+                 if found:
                       self.is_awake = True
-                      parts = command_clean.split("макс", 1)
-                      rest_command = parts[1].strip() if len(parts) > 1 else ""
                       if rest_command:
-                          return {"status": "success", "text": rest_command}
-                      wake_text = "Я вас слушаю."
+                          return {"status": "success", "text": rest_command, "language": detected_lang}
+                      # Приветствие на языке пользователя
+                      wake_texts = {"ru": "Я вас слушаю.", "en": "I'm listening.", "kk": "Мен тыңдап тұрмын."}
+                      wake_text = wake_texts.get(detected_lang, "Я вас слушаю.")
                       wake_audio = self._get_elevenlabs_audio(wake_text)
-                      return {"status": "wake", "text": wake_text, "audio_base64": wake_audio}
+                      return {"status": "wake", "text": wake_text, "audio_base64": wake_audio, "language": detected_lang}
                  else:
                       return {"status": "ignore", "text": ""}
             
             self.is_awake = False
-            return {"status": "success", "text": command_clean}
+            return {"status": "success", "text": command_clean, "language": detected_lang}
 
         except Exception as e:
             return {"status": "error", "message": f"Ошибка распознавания: {str(e)}"}

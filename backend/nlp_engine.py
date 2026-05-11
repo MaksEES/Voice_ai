@@ -36,50 +36,89 @@ def init_ai():
 
 init_ai()
 """Гибридный NLP через поиск ключевых слов и Gemini"""
-"""1 часть - расширенные ключевые слова"""
+"""1 часть - расширенные ключевые слова (мультиязычные)"""
 INTENT_KEYWORDS = {
     "OPEN_BROWSER": {
-        "verbs": ["открой", "запусти", "включи", "покажи", "загрузи", "давай", "хочу"],
-        "nouns": ["браузер", "интернет", "гугл", "хром", "chrome", "сайт", "веб", "google"],
+        "verbs": ["открой", "запусти", "включи", "покажи", "загрузи", "давай", "хочу",
+                  "open", "launch", "start", "run", "show",
+                  "аш", "қос", "іске", "көрсет"],
+        "nouns": ["браузер", "интернет", "гугл", "хром", "chrome", "сайт", "веб", "google",
+                  "browser", "internet", "web",
+                  "браузерді", "интернетті"],
     },
     "OPEN_CALC": {
-        "verbs": ["открой", "запусти", "включи", "покажи", "давай"],
-        "nouns": ["калькулятор", "счеты", "считалку", "считалка", "calculator"],
+        "verbs": ["открой", "запусти", "включи", "покажи", "давай",
+                  "open", "launch", "start", "run",
+                  "аш", "қос"],
+        "nouns": ["калькулятор", "счеты", "считалку", "считалка", "calculator",
+                  "калькуляторды", "есептегіш"],
     },
     "OPEN_NOTEPAD": {
-        "verbs": ["открой", "запусти", "включи", "давай"],
-        "nouns": ["блокнот", "текстовый редактор", "редактор", "notepad", "заметки"],
+        "verbs": ["открой", "запусти", "включи", "давай",
+                  "open", "launch", "start",
+                  "аш", "қос"],
+        "nouns": ["блокнот", "текстовый редактор", "редактор", "notepad", "заметки",
+                  "блокнотты", "жазба"],
     },
     "GET_STATS": {
-        "verbs": ["покажи", "какая", "скажи", "проверь"],
-        "nouns": ["статистика", "нагрузка", "состояние", "система", "ресурсы", "память"],
+        "verbs": ["покажи", "какая", "скажи", "проверь",
+                  "show", "check", "what",
+                  "көрсет", "тексер"],
+        "nouns": ["статистика", "нагрузка", "состояние", "система", "ресурсы", "память",
+                  "stats", "statistics", "system", "performance", "memory", "cpu",
+                  "жүйе", "жүктеме"],
     },
     "YOUTUBE": {
-        "verbs": ["найди", "включи", "открой", "покажи", "запусти", "поищи"],
-        "nouns": ["ютуб", "ютубе", "youtube", "видео"],
+        "verbs": ["найди", "включи", "открой", "покажи", "запусти", "поищи",
+                  "find", "search", "play", "open", "show",
+                  "іздеу", "тап", "аш"],
+        "nouns": ["ютуб", "ютубе", "youtube", "видео",
+                  "video",
+                  "бейне"],
     },
     "SEARCH": {
-        "verbs": ["найди", "поищи", "загугли", "покажи", "расскажи"],
-        "nouns": ["интернет", "интернете", "гугле", "сети", "google"],
+        "verbs": ["найди", "поищи", "загугли", "покажи", "расскажи",
+                  "find", "search", "google", "look",
+                  "іздеу", "тап"],
+        "nouns": ["интернет", "интернете", "гугле", "сети", "google",
+                  "internet", "web", "online",
+                  "интернеттен"],
     },
     "OPEN_PICTURES": {
-        "verbs": ["открой", "покажи", "запусти"],
-        "nouns": ["фото", "картинки", "фотографии", "галерея", "галерею", "изображения"],
+        "verbs": ["открой", "покажи", "запусти",
+                  "open", "show",
+                  "аш", "көрсет"],
+        "nouns": ["фото", "картинки", "фотографии", "галерея", "галерею", "изображения",
+                  "photos", "pictures", "gallery", "images",
+                  "сурет", "суреттер", "фотолар"],
     },
     "OPEN_MUSIC": {
-        "verbs": ["открой", "покажи", "запусти", "включи"],
-        "nouns": ["музыку", "музыка", "песни", "аудио", "треки"],
+        "verbs": ["открой", "покажи", "запусти", "включи",
+                  "open", "show", "play",
+                  "аш", "қос"],
+        "nouns": ["музыку", "музыка", "песни", "аудио", "треки",
+                  "music", "songs", "audio", "tracks",
+                  "музыканы", "әндер"],
     },
     "OPEN_DOWNLOADS": {
-        "verbs": ["открой", "покажи", "запусти"],
-        "nouns": ["загрузки", "скачанное", "скачанные", "downloads", "загрузок"],
+        "verbs": ["открой", "покажи", "запусти",
+                  "open", "show",
+                  "аш", "көрсет"],
+        "nouns": ["загрузки", "скачанное", "скачанные", "downloads", "загрузок",
+                  "жүктеулер", "жүктеулерді"],
     },
 }
 
 INTENT_PHRASES = {
-    "GET_STATS": ["как дела у системы", "состояние системы", "что с системой"],
-    "SEARCH": ["что такое", "кто такой", "что значит"],
-    "YOUTUBE": ["видео про", "на ютубе", "на youtube"],
+    "GET_STATS": ["как дела у системы", "состояние системы", "что с системой",
+                  "system status", "how is the system",
+                  "жүйе қалай"],
+    "SEARCH": ["что такое", "кто такой", "что значит",
+               "what is", "who is", "what does",
+               "не деген", "кім деген"],
+    "YOUTUBE": ["видео про", "на ютубе", "на youtube",
+                "video about", "on youtube",
+                "youtube-тен"],
 }
 
 """2 часть - нечеткое сравнение"""
@@ -93,25 +132,26 @@ def _fuzzy_find(word, candidates, threshold=0.75):
             best_match = candidate
     return best_match, best_score
 
-"""3 часть - вопрос к Gemini"""
-GEMINI_INTENT_PROMPT = """Ты — классификатор намерений голосового ассистента.
-Определи намерение пользователя из списка ниже. Ответь СТРОГО в формате JSON.
+"""3 часть - вопрос к Gemini (мультиязычный)"""
+GEMINI_INTENT_PROMPT = """You are an intent classifier for a voice assistant.
+The user may speak in Russian, English, or Kazakh.
+Classify the user's intent from the list below. Reply STRICTLY in JSON format.
 
-Возможные намерения:
-- OPEN_BROWSER — открыть браузер / интернет
-- OPEN_CALC — открыть калькулятор
-- OPEN_NOTEPAD — открыть блокнот / текстовый редактор
-- YOUTUBE — найти видео на YouTube
-- SEARCH — поиск в интернете
-- OPEN_PICTURES — открыть папку с картинками
-- OPEN_MUSIC — открыть папку с музыкой
-- OPEN_DOWNLOADS — открыть папку загрузок
-- GET_STATS — показать статистику системы
-- UNKNOWN — если не подходит ни одно намерение
+Possible intents:
+- OPEN_BROWSER — open browser / internet
+- OPEN_CALC — open calculator
+- OPEN_NOTEPAD — open notepad / text editor
+- YOUTUBE — find video on YouTube
+- SEARCH — search the internet
+- OPEN_PICTURES — open pictures folder
+- OPEN_MUSIC — open music folder
+- OPEN_DOWNLOADS — open downloads folder
+- GET_STATS — show system statistics
+- UNKNOWN — if no intent matches
 
-Текст пользователя: "{text}"
+User text: "{text}"
 
-Ответь ТОЛЬКО JSON, без пояснений:
+Reply ONLY with JSON, no explanations:
 {{"intent": "...", "confidence": 0.0}}"""
 
 
@@ -157,15 +197,34 @@ def _classify_with_gemini(text):
 class NLPProcessor:
     def __init__(self):
         self.system_intents = {
-            "OPEN_BROWSER": [r"открой (браузер|интернет|гугл|сайт)", r"запусти (браузер|интернет)"],
-            "OPEN_CALC": [r"открой (калькулятор|счеты)", r"запусти калькулятор"],
-            "OPEN_NOTEPAD": [r"открой (блокнот|текстовый редактор)", r"запиши (заметку|текст)"],
-            "GET_STATS": [r"(покажи|какая) (статистика|нагрузка|состояние)", r"как дела у системы"],
-            "YOUTUBE": [r"(найди|включи|открой) на (ютубе|youtube)", r"видео про (.+)"],
-            "SEARCH": [r"(найди|поищи) в (интернете|гугле|сети) (.+)", r"что такое (.+)"],
-            "OPEN_PICTURES": [r"открой (фото|картинки|галерею)", r"открой папку с картинками"],
-            "OPEN_MUSIC": [r"открой (музыку|музыка)", r"открой папку с музыкой"],
-            "OPEN_DOWNLOADS": [r"открой (загрузки|скачанное)", r"открой папку загрузок"],
+            # Русский
+            "OPEN_BROWSER": [r"открой (браузер|интернет|гугл|сайт)", r"запусти (браузер|интернет)",
+                             r"open (browser|internet|chrome)", r"launch browser",
+                             r"(браузерді|интернетті) аш"],
+            "OPEN_CALC": [r"открой (калькулятор|счеты)", r"запусти калькулятор",
+                          r"open calculator", r"launch calculator",
+                          r"калькуляторды аш"],
+            "OPEN_NOTEPAD": [r"открой (блокнот|текстовый редактор)", r"запиши (заметку|текст)",
+                             r"open (notepad|text editor)", r"launch notepad",
+                             r"блокнотты аш"],
+            "GET_STATS": [r"(покажи|какая) (статистика|нагрузка|состояние)", r"как дела у системы",
+                          r"(show|check) (stats|system|performance)", r"system status",
+                          r"жүйе (қалай|жағдайы)"],
+            "YOUTUBE": [r"(найди|включи|открой) на (ютубе|youtube)", r"видео про (.+)",
+                        r"(find|search|play) on youtube", r"video about (.+)",
+                        r"youtube-тен (іздеу|тап)"],
+            "SEARCH": [r"(найди|поищи) в (интернете|гугле|сети) (.+)", r"что такое (.+)",
+                       r"(search|find|google) (.+)", r"what is (.+)",
+                       r"интернеттен (іздеу|тап)"],
+            "OPEN_PICTURES": [r"открой (фото|картинки|галерею)", r"открой папку с картинками",
+                              r"open (photos|pictures|gallery)",
+                              r"(суреттерді|фотоларды) аш"],
+            "OPEN_MUSIC": [r"открой (музыку|музыка)", r"открой папку с музыкой",
+                           r"open music", r"play music",
+                           r"музыканы аш"],
+            "OPEN_DOWNLOADS": [r"открой (загрузки|скачанное)", r"открой папку загрузок",
+                               r"open downloads",
+                               r"жүктеулерді аш"],
         }
 
     def analyze(self, text):
@@ -237,26 +296,56 @@ class NLPProcessor:
         
         return None
 
-    def get_response(self, intent, original_text):
+    def get_response(self, intent, original_text, lang="ru"):
         system_responses = {
-            "OPEN_BROWSER": "Запускаю ваш стандартный браузер. Готов к работе в сети.",
-            "OPEN_CALC": "Открываю калькулятор. Что будем считать?",
-            "OPEN_NOTEPAD": "Блокнот открыт. Можете записывать.",
-            "GET_STATS": "Проверяю состояние ресурсов... Система работает стабильно.",
-            "YOUTUBE": f"Ищу '{original_text}' на YouTube. Сейчас откроется видео.",
-            "SEARCH": f"Ищу информацию про '{original_text}' в интернете.",
-            "OPEN_PICTURES": "Открываю вашу галерею.",
-            "OPEN_MUSIC": "Открываю папку с музыкой.",
-            "OPEN_DOWNLOADS": "Открываю папку загрузок.",
+            "ru": {
+                "OPEN_BROWSER": "Запускаю ваш стандартный браузер. Готов к работе в сети.",
+                "OPEN_CALC": "Открываю калькулятор. Что будем считать?",
+                "OPEN_NOTEPAD": "Блокнот открыт. Можете записывать.",
+                "GET_STATS": "Проверяю состояние ресурсов... Система работает стабильно.",
+                "YOUTUBE": f"Ищу '{original_text}' на YouTube. Сейчас откроется видео.",
+                "SEARCH": f"Ищу информацию про '{original_text}' в интернете.",
+                "OPEN_PICTURES": "Открываю вашу галерею.",
+                "OPEN_MUSIC": "Открываю папку с музыкой.",
+                "OPEN_DOWNLOADS": "Открываю папку загрузок.",
+            },
+            "en": {
+                "OPEN_BROWSER": "Launching your default browser. Ready to surf.",
+                "OPEN_CALC": "Opening calculator. What shall we compute?",
+                "OPEN_NOTEPAD": "Notepad is open. You can start writing.",
+                "GET_STATS": "Checking system resources... System is running smoothly.",
+                "YOUTUBE": f"Searching for '{original_text}' on YouTube.",
+                "SEARCH": f"Searching for '{original_text}' on the internet.",
+                "OPEN_PICTURES": "Opening your photo gallery.",
+                "OPEN_MUSIC": "Opening your music folder.",
+                "OPEN_DOWNLOADS": "Opening your downloads folder.",
+            },
+            "kk": {
+                "OPEN_BROWSER": "Браузерді іске қосудамын. Желіге дайынмын.",
+                "OPEN_CALC": "Калькуляторды ашудамын. Нені есептейміз?",
+                "OPEN_NOTEPAD": "Блокнот ашылды. Жаза берсеңіз болады.",
+                "GET_STATS": "Жүйе ресурстарын тексерудемін... Жүйе тұрақты жұмыс істеуде.",
+                "YOUTUBE": f"YouTube-тен '{original_text}' іздеудемін.",
+                "SEARCH": f"Интернеттен '{original_text}' іздеудемін.",
+                "OPEN_PICTURES": "Сурет галереяңызды ашудамын.",
+                "OPEN_MUSIC": "Музыка қалтасын ашудамын.",
+                "OPEN_DOWNLOADS": "Жүктеулер қалтасын ашудамын.",
+            },
         }
 
-        if intent in system_responses:
-            return system_responses[intent]
+        responses = system_responses.get(lang, system_responses["ru"])
+        if intent in responses:
+            return responses[intent]
 
         if client and intent == "AI_THINK":
             try:
                 clean_text = original_text[:500]
-                prompt = f"Ты — интеллектуальный помощник Voice OS. Ответь коротко и ясно на запрос пользователя: {clean_text}"
+                lang_instructions = {
+                    "ru": f"Ты — интеллектуальный помощник Voice OS. Ответь коротко и ясно на русском языке: {clean_text}",
+                    "en": f"You are Voice OS intelligent assistant. Reply briefly and clearly in English: {clean_text}",
+                    "kk": f"Сен Voice OS интеллектуалды көмекшісісің. Қазақ тілінде қысқа және анық жауап бер: {clean_text}",
+                }
+                prompt = lang_instructions.get(lang, lang_instructions["ru"])
                 
                 if use_new_sdk:
                     try:
