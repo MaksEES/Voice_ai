@@ -4,11 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Test</title>
+    <title>Max — Voice OS</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body>
@@ -23,7 +23,7 @@
 
     <!-- Кнопка вызова боковой панели -->
     <button id="sidebar-toggle" class="sidebar-toggle-btn" title="История чатов">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" stroke-linecap="round">
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -34,7 +34,12 @@
         <aside class="sidebar-history glass-card" id="sidebar">
             <div class="sidebar-header">
                 <h2>История чатов</h2>
-                <button id="new-chat-btn" class="new-chat-btn" title="Новый чат">+</button>
+                <button id="new-chat-btn" class="new-chat-btn" title="Новый чат">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                </button>
             </div>
             <div class="chat-container" id="chat-history">
             </div>
@@ -50,30 +55,50 @@
 
             <div class="center-stage">
                 <div class="voice-hub-wrapper">
-                    <div class="glass-card voice-hub">
-                        <div class="visualizer-container" id="visualizer">
-                            <div class="waveform">
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
-                                <div class="bar"></div>
+                    <div class="voice-hub" id="voice-hub">
+
+                        <!-- Mic orb area -->
+                        <div class="mic-orb-area" id="mic-toggle">
+                            <!-- Pulse rings (visible when active) -->
+                            <div class="pulse-ring pulse-ring-1"></div>
+                            <div class="pulse-ring pulse-ring-2"></div>
+                            <div class="pulse-ring pulse-ring-3"></div>
+
+                            <!-- Glow backdrop -->
+                            <div class="orb-glow"></div>
+
+                            <!-- Main orb -->
+                            <div class="mic-orb">
+                                <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
+                                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                                </svg>
                             </div>
-                            <div class="main-orb"></div>
-                            <div class="glow-sphere"></div>
+
+                            <!-- Waveform bars around orb -->
+                            <div class="waveform-ring">
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                                <div class="wave-bar"></div>
+                            </div>
                         </div>
+
                         <div class="voice-labels">
-                            <h1 id="status-text">Система готова</h1>
-                            <p id="sub-status">Скажите команду</p>
+                            <div class="status-badge" id="status-badge">
+                                <span class="status-dot"></span>
+                                <span id="status-text">Система готова</span>
+                            </div>
+                            <p id="sub-status">Скажите «Макс» или нажмите на микрофон</p>
                         </div>
-                        <button class="prime-mic-btn" id="mic-toggle">
-                            <div class="mic-inner">🎤</div>
-                            <div class="mic-wave"></div>
-                        </button>
                     </div>
 
                     <div class="glass-card user-text-window" id="user-text-window" style="opacity: 0;">

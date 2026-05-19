@@ -16,10 +16,9 @@ A chatbot application that uses the Google Gemini API for natural language proce
     ```
 
 3.  **Environment Variables:**
-    Create a `.env` file in the root directory and add your Google Gemini and ElevenLabs API key:
+    Create a `.env` file in the root directory and specify the path to your local Llama model file:
     ```env
-    API_KEY="your_api_key_here"
-    Voice_API_KEY="your_elevenlabs_api_key_here"
+    LLM_MODEL_PATH="path/to/your/llama-model.gguf"
     ```
 
 5.  **Run the application:**

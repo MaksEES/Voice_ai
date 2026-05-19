@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 *.db
 backend/screen.png
+backend/.audio_cache/
 plan.txt

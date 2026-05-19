@@ -8,35 +8,42 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
 load_dotenv(dotenv_path=env_path)
 
-client = None
-model_name = 'gemini-2.5-flash' 
-use_new_sdk = False
+llm = None
 
 def init_ai():
-    global client, use_new_sdk
-    api_key = os.getenv("API_KEY")
+    global llm
+    model_path = os.getenv("LLM_MODEL_PATH")
+    
+    if not model_path or not os.path.exists(model_path):
+        print(f"[LLM] Ошибка: файл модели не найден: {model_path}")
+        print("[LLM] Проверь переменную LLM_MODEL_PATH в файле .env")
+        llm = None
+        return
     
     try:
-        #SDK genai
-        from google import genai
-        client = genai.Client(api_key=api_key)
-        use_new_sdk = True
-        print("ИИ: Использован новый SDK (google-genai)")
-    except Exception:
-        try:
-            import google.generativeai as genai_old
-            genai_old.configure(api_key=api_key)
-            client = genai_old.GenerativeModel('gemini-1.5-flash')
-            use_new_sdk = False
-            print("ИИ: Использован старый SDK (google-generativeai)")
-        except Exception as e:
-            print(f"ИИ: Ошибка инициализации: {e}")
-            client = None
+        from llama_cpp import Llama
+        print(f"[LLM] Загрузка Llama 3 из: {os.path.basename(model_path)}...")
+        print("[LLM] Это займёт 10-20 секунд...")
+        
+        llm = Llama(
+            model_path=model_path,
+            n_ctx=2048,
+            n_gpu_layers=-1,
+            n_threads=None,
+            verbose=False,
+        )
+        print("[LLM] ✓ Llama 3 загружена и готова к работе!")
+    except ImportError:
+        print("[LLM] Ошибка: библиотека llama-cpp-python не установлена!")
+        print("[LLM] Установи: pip install llama-cpp-python")
+        llm = None
+    except Exception as e:
+        print(f"[LLM] Ошибка загрузки модели: {e}")
+        llm = None
 
 
 init_ai()
-"""Гибридный NLP через поиск ключевых слов и Gemini"""
-"""1 часть - расширенные ключевые слова (мультиязычные)"""
+"""ключевые слова"""
 INTENT_KEYWORDS = {
     "OPEN_BROWSER": {
         "verbs": ["открой", "запусти", "включи", "покажи", "загрузи", "давай", "хочу",
@@ -121,7 +128,7 @@ INTENT_PHRASES = {
                 "youtube-тен"],
 }
 
-"""2 часть - нечеткое сравнение"""
+"""нечеткое сравнение"""
 def _fuzzy_find(word, candidates, threshold=0.75):
     best_match = None
     best_score = 0
@@ -132,8 +139,8 @@ def _fuzzy_find(word, candidates, threshold=0.75):
             best_match = candidate
     return best_match, best_score
 
-"""3 часть - вопрос к Gemini (мультиязычный)"""
-GEMINI_INTENT_PROMPT = """You are an intent classifier for a voice assistant.
+"""вопрос к Llama 3"""
+INTENT_CLASSIFY_PROMPT = """You are an intent classifier for a voice assistant.
 The user may speak in Russian, English, or Kazakh.
 Classify the user's intent from the list below. Reply STRICTLY in JSON format.
 
@@ -155,76 +162,58 @@ Reply ONLY with JSON, no explanations:
 {{"intent": "...", "confidence": 0.0}}"""
 
 
-def _classify_with_gemini(text):
-    if not client:
+def _classify_with_llm(text):
+    if not llm:
         return None, 0
     
     try:
-        prompt = GEMINI_INTENT_PROMPT.replace("{text}", text[:200])
+        prompt = INTENT_CLASSIFY_PROMPT.replace("{text}", text[:200])
         
-        if use_new_sdk:
-            try:
-                response = client.models.generate_content(model=model_name, contents=prompt)
-                result_text = response.text
-            except Exception:
-                response = client.models.generate_content(model='gemini-2.0-flash-lite', contents=prompt)
-                result_text = response.text
-        else:
-            response = client.generate_content(prompt)
-            result_text = response.text
+        response = llm.create_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=64,
+            response_format={"type": "json_object"},
+        )
         
-        result_text = result_text.strip()
-        if result_text.startswith("```"):
-            result_text = result_text.split("\n", 1)[-1]
-            result_text = result_text.rsplit("```", 1)[0]
-            result_text = result_text.strip()
+        result_text = response["choices"][0]["message"]["content"].strip()
         
         data = json.loads(result_text)
         intent = data.get("intent", "UNKNOWN")
         confidence = float(data.get("confidence", 0))
         
         if intent != "UNKNOWN" and confidence >= 0.6:
-            print(f"[NLP] Gemini классификация: {intent} ({confidence:.0%})")
+            print(f"[NLP] Llama классификация: {intent} ({confidence:.0%})")
             return intent, confidence
         
         return None, 0
         
     except Exception as e:
-        print(f"[NLP] Ошибка Gemini классификации: {e}")
+        print(f"[NLP] Ошибка Llama классификации: {e}")
         return None, 0
 
 
 class NLPProcessor:
     def __init__(self):
         self.system_intents = {
-            # Русский
-            "OPEN_BROWSER": [r"открой (браузер|интернет|гугл|сайт)", r"запусти (браузер|интернет)",
-                             r"open (browser|internet|chrome)", r"launch browser",
-                             r"(браузерді|интернетті) аш"],
-            "OPEN_CALC": [r"открой (калькулятор|счеты)", r"запусти калькулятор",
-                          r"open calculator", r"launch calculator",
-                          r"калькуляторды аш"],
-            "OPEN_NOTEPAD": [r"открой (блокнот|текстовый редактор)", r"запиши (заметку|текст)",
-                             r"open (notepad|text editor)", r"launch notepad",
-                             r"блокнотты аш"],
-            "GET_STATS": [r"(покажи|какая) (статистика|нагрузка|состояние)", r"как дела у системы",
-                          r"(show|check) (stats|system|performance)", r"system status",
-                          r"жүйе (қалай|жағдайы)"],
-            "YOUTUBE": [r"(найди|включи|открой) на (ютубе|youtube)", r"видео про (.+)",
-                        r"(find|search|play) on youtube", r"video about (.+)",
-                        r"youtube-тен (іздеу|тап)"],
-            "SEARCH": [r"(найди|поищи) в (интернете|гугле|сети) (.+)", r"что такое (.+)",
-                       r"(search|find|google) (.+)", r"what is (.+)",
-                       r"интернеттен (іздеу|тап)"],
-            "OPEN_PICTURES": [r"открой (фото|картинки|галерею)", r"открой папку с картинками",
-                              r"open (photos|pictures|gallery)",
-                              r"(суреттерді|фотоларды) аш"],
-            "OPEN_MUSIC": [r"открой (музыку|музыка)", r"открой папку с музыкой",
-                           r"open music", r"play music",
-                           r"музыканы аш"],
-            "OPEN_DOWNLOADS": [r"открой (загрузки|скачанное)", r"открой папку загрузок",
-                               r"open downloads",
-                               r"жүктеулерді аш"],
+            "OPEN_BROWSER": [r"(?:открой|запусти|включи) (?:браузер|интернет|гугл|сайт)", r"open (?:browser|internet|chrome)", r"launch browser", r"(?:браузерді|интернетті) аш"],
+            "OPEN_CALC": [r"(?:открой|запусти) (?:калькулятор|счеты)", r"open calculator", r"launch calculator", r"калькуляторды аш"],
+            "OPEN_NOTEPAD": [r"(?:открой|запусти) (?:блокнот|текстовый редактор)", r"open (?:notepad|text editor)", r"launch notepad", r"блокнотты аш"],
+            "GET_STATS": [r"(?:покажи|какая) (?:статистика|нагрузка|состояние)", r"как дела у системы", r"(?:show|check) (?:stats|system|performance)", r"system status", r"жүйе (?:қалай|жағдайы)"],
+            "YOUTUBE": [r"(?:включи|найди|открой) (.+) (?:на|в) (?:ютубе|youtube|ютуб)", r"видео про (.+)", r"(?:find|search|play) (.+) on youtube", r"video about (.+)", r"youtube-тен (?:іздеу|тап)"],
+            "SPOTIFY": [r"(?:включи|поставь|найди) (.+) (?:в|на) (?:спотифай|spotify)"],
+            "VOLUME_UP": [r"(?:сделай|) (?:погромче|громче)", r"прибавь звук", r"volume up"],
+            "VOLUME_DOWN": [r"(?:сделай|) (?:потише|тише)", r"убавь звук", r"volume down"],
+            "VOLUME_MUTE": [r"выключи звук", r"без звука", r"mute volume"],
+            "MEDIA_PLAY_PAUSE": [r"поставь на паузу", r"пауза", r"продолжи (?:музыку|воспроизведение)", r"play music", r"pause music"],
+            "MEDIA_NEXT": [r"следующий трек", r"включи следующую", r"next track"],
+            "MEDIA_PREV": [r"предыдущий трек", r"включи предыдущую", r"previous track"],
+            "SYS_SLEEP": [r"спящий режим", r"усни", r"перейди в спящий режим", r"sleep mode"],
+            "SYS_SHUTDOWN": [r"выключи (?:компьютер|пк)", r"завершение работы", r"shutdown computer"],
+            "SEARCH": [r"(?:найди|поищи) (?:в интернете|в гугле|в сети) (.+)", r"что такое (.+)", r"(?:search|find|google) (.+)", r"what is (.+)", r"интернеттен (?:іздеу|тап)"],
+            "OPEN_PICTURES": [r"открой (?:фото|картинки|галерею)", r"открой папку с картинками", r"open (?:photos|pictures|gallery)", r"(?:суреттерді|фотоларды) аш"],
+            "OPEN_MUSIC": [r"открой (?:музыку|музыка)", r"открой папку с музыкой", r"open music", r"play music", r"музыканы аш"],
+            "OPEN_DOWNLOADS": [r"открой (?:загрузки|скачанное)", r"открой папку загрузок", r"open downloads", r"жүктеулерді аш"],
         }
 
     def analyze(self, text):
@@ -254,10 +243,10 @@ class NLPProcessor:
                     print(f"[NLP] Уровень 2.5 (фраза): {phrase_intent}")
                     return phrase_intent, text
         
-        gemini_intent, confidence = _classify_with_gemini(text)
-        if gemini_intent:
-            print(f"[NLP] Уровень 3 (Gemini): {gemini_intent}")
-            return gemini_intent, text
+        llm_intent, confidence = _classify_with_llm(text)
+        if llm_intent:
+            print(f"[NLP] Уровень 3 (Llama): {llm_intent}")
+            return llm_intent, text
         
         return "AI_THINK", text
     
@@ -296,29 +285,47 @@ class NLPProcessor:
         
         return None
 
-    def get_response(self, intent, original_text, lang="ru"):
+    def get_response(self, intent, original_text, lang="ru", history=None):
         system_responses = {
             "ru": {
                 "OPEN_BROWSER": "Запускаю ваш стандартный браузер. Готов к работе в сети.",
                 "OPEN_CALC": "Открываю калькулятор. Что будем считать?",
                 "OPEN_NOTEPAD": "Блокнот открыт. Можете записывать.",
                 "GET_STATS": "Проверяю состояние ресурсов... Система работает стабильно.",
-                "YOUTUBE": f"Ищу '{original_text}' на YouTube. Сейчас откроется видео.",
+                "YOUTUBE": f"Включаю '{original_text}' на YouTube.",
+                "SPOTIFY": f"Ищу '{original_text}' в Spotify.",
                 "SEARCH": f"Ищу информацию про '{original_text}' в интернете.",
                 "OPEN_PICTURES": "Открываю вашу галерею.",
                 "OPEN_MUSIC": "Открываю папку с музыкой.",
                 "OPEN_DOWNLOADS": "Открываю папку загрузок.",
+                "VOLUME_UP": "Делаю погромче.",
+                "VOLUME_DOWN": "Делаю потише.",
+                "VOLUME_MUTE": "Звук отключен.",
+                "MEDIA_PLAY_PAUSE": "Переключаю паузу.",
+                "MEDIA_NEXT": "Следующий трек.",
+                "MEDIA_PREV": "Предыдущий трек.",
+                "SYS_SLEEP": "Перехожу в спящий режим. До встречи!",
+                "SYS_SHUTDOWN": "Выключаю компьютер через 5 секунд. Чтобы отменить, напиши shutdown /a в консоль.",
             },
             "en": {
                 "OPEN_BROWSER": "Launching your default browser. Ready to surf.",
                 "OPEN_CALC": "Opening calculator. What shall we compute?",
                 "OPEN_NOTEPAD": "Notepad is open. You can start writing.",
                 "GET_STATS": "Checking system resources... System is running smoothly.",
-                "YOUTUBE": f"Searching for '{original_text}' on YouTube.",
+                "YOUTUBE": f"Playing '{original_text}' on YouTube.",
+                "SPOTIFY": f"Searching for '{original_text}' on Spotify.",
                 "SEARCH": f"Searching for '{original_text}' on the internet.",
                 "OPEN_PICTURES": "Opening your photo gallery.",
                 "OPEN_MUSIC": "Opening your music folder.",
                 "OPEN_DOWNLOADS": "Opening your downloads folder.",
+                "VOLUME_UP": "Increasing volume.",
+                "VOLUME_DOWN": "Decreasing volume.",
+                "VOLUME_MUTE": "Volume muted.",
+                "MEDIA_PLAY_PAUSE": "Toggling playback.",
+                "MEDIA_NEXT": "Next track.",
+                "MEDIA_PREV": "Previous track.",
+                "SYS_SLEEP": "Going to sleep mode.",
+                "SYS_SHUTDOWN": "Shutting down the computer in 5 seconds.",
             },
             "kk": {
                 "OPEN_BROWSER": "Браузерді іске қосудамын. Желіге дайынмын.",
@@ -337,35 +344,34 @@ class NLPProcessor:
         if intent in responses:
             return responses[intent]
 
-        if client and intent == "AI_THINK":
+        if llm and intent == "AI_THINK":
             try:
                 clean_text = original_text[:500]
                 lang_instructions = {
-                    "ru": f"Ты — интеллектуальный помощник Voice OS. Ответь коротко и ясно на русском языке: {clean_text}",
-                    "en": f"You are Voice OS intelligent assistant. Reply briefly and clearly in English: {clean_text}",
-                    "kk": f"Сен Voice OS интеллектуалды көмекшісісің. Қазақ тілінде қысқа және анық жауап бер: {clean_text}",
+                    "ru": "Ты — интеллектуальный помощник Voice OS по имени Макс. Ответь коротко и ясно на русском языке.",
+                    "en": "You are Voice OS intelligent assistant named Max. Reply briefly and clearly in English.",
+                    "kk": "Сен Voice OS интеллектуалды көмекшісісің, атың Макс. Қазақ тілінде қысқа және анық жауап бер.",
                 }
-                prompt = lang_instructions.get(lang, lang_instructions["ru"])
+                system_prompt = lang_instructions.get(lang, lang_instructions["ru"])
                 
-                if use_new_sdk:
-                    try:
-                        response = client.models.generate_content(model=model_name, contents=prompt)
-                        return response.text
-                    except Exception:
-                        response = client.models.generate_content(model='gemini-2.0-flash-lite', contents=prompt)
-                        return response.text
-                else:
-                    response = client.generate_content(prompt)
-                    return response.text
+                messages = [{"role": "system", "content": system_prompt}]
+                if history:
+                    messages.extend(history)
+                messages.append({"role": "user", "content": clean_text})
+                
+                response = llm.create_chat_completion(
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=256,
+                )
+                
+                result = response["choices"][0]["message"]["content"].strip()
+                return result
             except Exception as e:
                 error_msg = str(e)
-                print(f"AI ERROR (Gemini): {error_msg}")
-                if "404" in error_msg:
-                    return "Ошибка: Модель ИИ не найдена. Попробуйте обновить библиотеку: pip install -U google-genai"
-                if "403" in error_msg:
-                    return "Ошибка: Доступ к модели заблокирован для этого ключа."
+                print(f"AI ERROR (Llama): {error_msg}")
                 return f"Ошибка ИИ: {error_msg[:100]}..."
 
         
-        if not client and intent == "AI_THINK":
-            return "ИИ не настроен. Убедитесь, что установлена библиотека 'google-genai' и API ключ верен."
+        if not llm and intent == "AI_THINK":
+            return "ИИ не загружен. Убедитесь, что установлена библиотека 'llama-cpp-python' и путь к модели верен в файле .env."

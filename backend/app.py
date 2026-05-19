@@ -22,7 +22,8 @@ except ImportError:
     sr = None
     
 _whisper_model = None
-"""Исправление лексических ошибок — мультиязычные промпты и коррекции"""
+_whisper_tiny = None 
+_silero_ru_model = None 
 WHISPER_PROMPTS = {
     "ru": (
         "Макс, открой браузер. Открой калькулятор. "
@@ -90,7 +91,6 @@ WHISPER_CORRECTIONS = {
     },
 }
 
-"""Ключевые слова wake-word на разных языках"""
 WAKE_WORDS = {
     "ru": ["макс"],
     "en": ["max", "macs", "marks"],
@@ -106,9 +106,6 @@ def _correct_text(text, lang="ru"):
     return " ".join(corrected)
 
 def _detect_wake_word(text_clean, lang=None):
-    """Проверяет наличие wake-word в тексте на любом языке.
-    Возвращает (found: bool, rest_command: str)"""
-    # Если язык известен — ищем в его словаре, иначе во всех
     langs_to_check = [lang] if lang and lang in WAKE_WORDS else WAKE_WORDS.keys()
     for check_lang in langs_to_check:
         for ww in WAKE_WORDS[check_lang]:
@@ -119,8 +116,12 @@ def _detect_wake_word(text_clean, lang=None):
     return False, ""
 
 """Оптимизирование под каждый пк"""
+def _load_model(model_size, device, compute_type):
+    from faster_whisper import WhisperModel
+    return WhisperModel(model_size, device=device, compute_type=compute_type)
+
 def _init_whisper():
-    global _whisper_model
+    global _whisper_model, _whisper_tiny
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -136,17 +137,57 @@ def _init_whisper():
 
     for device, compute_type, label in device_chain:
         try:
-            print(f"[Whisper] Пробую: {label}...")
-            _whisper_model = WhisperModel("small", device=device, compute_type=compute_type)
-            print(f"[Whisper] ✓ Загружено: {label}")
+            print(f"[Whisper] Пробую medium: {label}...")
+            _whisper_model = _load_model("medium", device, compute_type)
+            print(f"[Whisper] ✓ medium загружено: {label}")
+            try:
+                _whisper_tiny = _load_model("tiny", device, compute_type)
+                print(f"[Whisper] ✓ tiny загружено: {label}")
+            except Exception as e2:
+                print(f"[Whisper] ✗ tiny не загружено: {e2}")
+                _whisper_tiny = _whisper_model
             return
         except Exception as e:
             print(f"[Whisper] ✗ {label}: {e}")
 
-    print("[Whisper] ОШИБКА: Не удалось загрузить модель ни одним способом")
+    print("[Whisper] ОШИБКА: Не удалось загрузить модель")
     _whisper_model = None
 
 _init_whisper()
+
+_audio_cache = {}
+_audio_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".audio_cache")
+os.makedirs(_audio_cache_dir, exist_ok=True)
+
+def _load_audio_cache():
+    global _audio_cache
+    try:
+        for f in os.listdir(_audio_cache_dir):
+            if f.endswith(".b64"):
+                key = f[:-4]
+                with open(os.path.join(_audio_cache_dir, f), "r", encoding="utf-8") as fh:
+                    _audio_cache[key] = fh.read()
+        if _audio_cache:
+            print(f"[AudioCache] Загружено {len(_audio_cache)} кэшированных аудио")
+    except Exception as e:
+        print(f"[AudioCache] Ошибка загрузки: {e}")
+
+def _save_to_audio_cache(text, audio_b64):
+    import hashlib
+    key = hashlib.md5(text.encode()).hexdigest()
+    _audio_cache[key] = audio_b64
+    try:
+        with open(os.path.join(_audio_cache_dir, f"{key}.b64"), "w", encoding="utf-8") as fh:
+            fh.write(audio_b64)
+    except Exception:
+        pass
+
+def _get_from_audio_cache(text):
+    import hashlib
+    key = hashlib.md5(text.encode()).hexdigest()
+    return _audio_cache.get(key)
+
+_load_audio_cache()
 
 
 class API:
@@ -156,10 +197,11 @@ class API:
         self.force_stop = False
         self.is_awake = False
         self.current_session_id = None
-        self.current_language = None  # None = авто-определение, "ru"/"en"/"kk" = фиксированный
-        self.detected_language = "ru"  # последний определённый язык
+        self.current_language = None 
+        self.detected_language = "ru"  
         init_db()
         self.app_resolver = AppResolver()
+        threading.Thread(target=self._preload_common_audio, daemon=True).start()
 
     def stop_listening(self):
         self.force_stop = True
@@ -168,7 +210,6 @@ class API:
         self.is_awake = True
 
     def set_language(self, lang_code):
-        """Установить язык распознавания: 'ru', 'en', 'kk' или None (авто)"""
         if lang_code in ("ru", "en", "kk", None, "auto"):
             self.current_language = None if lang_code == "auto" else lang_code
             print(f"[Lang] Язык установлен: {self.current_language or 'авто'}")
@@ -182,7 +223,7 @@ class API:
         if not pyttsx3:
             return
 
-        """ElevenLabs подключение"""    
+        """Локальный синтез через pyttsx3 (резервный)"""    
         def _speak():
             try:
                 engine = pyttsx3.init()
@@ -199,30 +240,98 @@ class API:
                 
         threading.Thread(target=_speak, daemon=True).start()
 
-    def _get_elevenlabs_audio(self, text):
-        voice_api_key = os.getenv("Voice_API")
-        if not voice_api_key:
-            return None
+    def _play_audio_locally(self, audio_base64):
+        def _play():
+            try:
+                import tempfile
+                audio_bytes = base64.b64decode(audio_base64)
+                temp_path = os.path.join(tempfile.gettempdir(), "max_voice.mp3")
+                with open(temp_path, "wb") as f:
+                    f.write(audio_bytes)
+                if sys.platform == "win32":
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                         f'Add-Type -AssemblyName presentationCore;'
+                         f'$p = New-Object System.Windows.Media.MediaPlayer;'
+                         f'$p.Open([uri]"{temp_path}");'
+                         f'$p.Play();'
+                         f'Start-Sleep -Milliseconds 500;'
+                         f'while($p.Position -lt $p.NaturalDuration.TimeSpan){{Start-Sleep -Milliseconds 100}};'
+                         f'$p.Close()'],
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        timeout=30,
+                    )
+            except Exception as e:
+                print(f"[LocalPlay] Ошибка: {e}")
+        threading.Thread(target=_play, daemon=True).start()
+
+    def _get_silero_audio(self, text):
+        cached = _get_from_audio_cache(text)
+        if cached:
+            print(f"[AudioCache] HIT: {text[:40]}...")
+            return cached
+
         try:
-            url = "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb"
-            headers = {
-                "Accept": "audio/mpeg",
-                "Content-Type": "application/json",
-                "xi-api-key": voice_api_key.strip('"')
-            }
-            data = {
-                "text": text,
-                "model_id": "eleven_multilingual_v2"
-            }
-            res = requests.post(url, json=data, headers=headers)
-            if res.status_code == 200:
-                return base64.b64encode(res.content).decode('utf-8')
-            else:
-                print(f"ElevenLabs API Error: {res.text}")
-                return None
+            import io
+            import time as _time
+            from scipy.io import wavfile
+            from silero import silero_tts
+            import torch
+            import numpy as np
+            
+            t0 = _time.time()
+            global _silero_ru_model
+            if '_silero_ru_model' not in globals() or _silero_ru_model is None:
+                print("[Silero] Загрузка модели v5_5_ru...")
+                _silero_ru_model, _ = silero_tts(language='ru', speaker='v5_5_ru')
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                _silero_ru_model = _silero_ru_model.to(device)
+
+            print("[Silero] Синтез речи...")
+            audio_tensor = _silero_ru_model.apply_tts(text=text, speaker='aidar', sample_rate=24000)
+            
+            audio_np = audio_tensor.cpu().numpy()
+            audio_buf = io.BytesIO()
+            wavfile.write(audio_buf, 24000, audio_np)
+            
+            audio_b64 = base64.b64encode(audio_buf.getvalue()).decode('utf-8')
+            elapsed = _time.time() - t0
+            print(f"[Silero] Синтезировано за {elapsed:.2f}s ({len(audio_buf.getvalue())//1024}KB)")
+            _save_to_audio_cache(text, audio_b64)
+            return audio_b64
         except Exception as e:
-            print(f"ElevenLabs Request Error: {e}")
+            print(f"[Silero] Ошибка синтеза: {e}")
             return None
+    def _preload_common_audio(self):
+        common_phrases = [
+            "Я слушаю.",
+            "Запускаю ваш стандартный браузер. Готов к работе в сети.",
+            "Открываю калькулятор. Что будем считать?",
+            "Блокнот открыт. Можете записывать.",
+            "Открываю вашу галерею.",
+            "Открываю папку с музыкой.",
+            "Открываю папку загрузок.",
+            "I'm listening.",
+            "Launching your default browser. Ready to surf.",
+            "Opening calculator. What shall we compute?",
+            "Notepad is open. You can start writing.",
+            "Мен тыңдап тұрмын.",
+        ]
+
+        preloaded = 0
+        for phrase in common_phrases:
+            if _get_from_audio_cache(phrase):
+                continue
+            try:
+                audio = self._get_silero_audio(phrase)
+                if audio:
+                    preloaded += 1
+            except Exception:
+                pass
+            import time
+            time.sleep(0.3)
+        if preloaded:
+            print(f"[AudioCache] Предзагружено {preloaded} новых фраз")
 
     """База данных"""
     def create_chat_session(self, title="Новый чат"):
@@ -251,14 +360,12 @@ class API:
     _HANDLED_INTENTS = {
         "OPEN_BROWSER", "OPEN_CALC", "OPEN_NOTEPAD", "OPEN_PICTURES",
         "OPEN_MUSIC", "OPEN_DOWNLOADS", "YOUTUBE", "SEARCH", "GET_STATS",
+        "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "MEDIA_PLAY_PAUSE",
+        "MEDIA_NEXT", "MEDIA_PREV", "SYS_SLEEP", "SYS_SHUTDOWN", "SPOTIFY"
     }
-    """Совмещение команд"""
     _SPLIT_WORDS = [
-        # Русский
         " а также ", " а потом ", " потом ", " затем ", " после этого ", " и ещё ", " плюс ",
-        # English
         " and then ", " then ", " also ", " after that ",
-        # Қазақша
         " содан кейін ", " сонымен қатар ", " сосын ",
     ]
 
@@ -287,15 +394,26 @@ class API:
             except Exception as e:
                 print(f"[DB] Ошибка сохранения сообщения: {e}")
 
-        audio_base64 = self._get_elevenlabs_audio(combined_response)
-        if not audio_base64:
-            self.speak(combined_response)
-            
-        return {
-            "intent": last_intent,
-            "response": combined_response,
-            "audio_base64": audio_base64
-        }
+        audio_base64 = _get_from_audio_cache(combined_response)
+        if audio_base64:
+            return {
+                "intent": last_intent,
+                "response": combined_response,
+                "audio_base64": audio_base64,
+            }
+        else:
+            def _bg_tts():
+                audio = self._get_silero_audio(combined_response)
+                if audio:
+                    self._play_audio_locally(audio)
+                else:
+                    self.speak(combined_response)
+            threading.Thread(target=_bg_tts, daemon=True).start()
+            return {
+                "intent": last_intent,
+                "response": combined_response,
+                "audio_base64": None,
+            }
 
     def _split_commands(self, text):
         text_lower = text.lower()
@@ -317,7 +435,6 @@ class API:
                     print(f"[CMD] Мульти-команда ({len(parts)}): {parts}")
                     return parts[:3]
 
-        # Разделение по "и" / "and" / "және"
         for conj in [" и ", " and ", " және "]:
             if conj not in text_lower:
                 continue
@@ -352,7 +469,18 @@ class API:
     def _execute_single_command(self, text):
         lang = self.detected_language or "ru"
         intent, original = self.nlp.analyze(text)
-        response_text = self.nlp.get_response(intent, original, lang)
+        
+        history = []
+        if self.current_session_id:
+            try:
+                session_msgs = get_session_messages(self.current_session_id)
+                for m in session_msgs[-24:]:
+                    role = "user" if m["sender"] == "user" else "assistant"
+                    history.append({"role": role, "content": m["text"]})
+            except Exception as e:
+                print(f"[Memory] Ошибка чтения истории: {e}")
+                
+        response_text = self.nlp.get_response(intent, original, lang, history=history)
 
         if intent == "OPEN_BROWSER":
             self.open_browser()
@@ -367,11 +495,69 @@ class API:
         elif intent == "OPEN_DOWNLOADS":
             self.open_folder('downloads')
         elif intent == "YOUTUBE":
+            import urllib.request
+            import urllib.parse
+            import re
             import webbrowser
-            webbrowser.open("https://www.youtube.com/")
+            try:
+                query_encoded = urllib.parse.quote(original)
+                html = urllib.request.urlopen("https://www.youtube.com/results?search_query=" + query_encoded)
+                video_ids = re.findall(r"watch\?v=(\S{11})", html.read().decode())
+                if video_ids:
+                    webbrowser.open("https://www.youtube.com/watch?v=" + video_ids[0])
+                else:
+                    webbrowser.open("https://www.youtube.com/results?search_query=" + query_encoded)
+            except Exception as e:
+                webbrowser.open("https://www.youtube.com/")
+        elif intent == "SPOTIFY":
+            import urllib.parse
+            import os
+            try:
+                query_encoded = urllib.parse.quote(original)
+                os.startfile(f"spotify:search:{query_encoded}")
+            except Exception as e:
+                print(f"[CMD] Ошибка Spotify: {e}")
+        elif intent == "VOLUME_UP":
+            import pyautogui
+            for _ in range(5): pyautogui.press('volumeup')
+        elif intent == "VOLUME_DOWN":
+            import pyautogui
+            for _ in range(5): pyautogui.press('volumedown')
+        elif intent == "VOLUME_MUTE":
+            import pyautogui
+            pyautogui.press('volumemute')
+        elif intent == "MEDIA_PLAY_PAUSE":
+            import pyautogui
+            pyautogui.press('playpause')
+        elif intent == "MEDIA_NEXT":
+            import pyautogui
+            pyautogui.press('nexttrack')
+        elif intent == "MEDIA_PREV":
+            import pyautogui
+            pyautogui.press('prevtrack')
+        elif intent == "SYS_SLEEP":
+            import os
+            os.system("rundll32.exe powrprof.dll,SetSuspendState Sleep")
+        elif intent == "SYS_SHUTDOWN":
+            import os
+            os.system("shutdown /s /t 5")
         elif intent == "SEARCH":
-            import webbrowser
-            webbrowser.open(f"https://www.google.com/search?q={original}")
+            # Умный поиск: ищем в DuckDuckGo, скармливаем результаты Llama 3
+            try:
+                from duckduckgo_search import DDGS
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(original, max_results=3))
+                if results:
+                    snippets = "\n".join([f"- {r.get('title','')}: {r.get('body','')}" for r in results])
+                    search_prompt = f"На основе этих данных из интернета:\n{snippets}\n\nКратко и точно ответь на вопрос: {original}"
+                    response_text = self.nlp.get_response("AI_THINK", search_prompt, lang)
+                else:
+                    response_text = f"К сожалению, ничего не нашел по запросу «{original}»."
+            except Exception as e:
+                print(f"[SEARCH] Ошибка поиска: {e}")
+                import webbrowser
+                webbrowser.open(f"https://www.google.com/search?q={original}")
+                response_text = f"Не удалось выполнить умный поиск, открыл Google."
 
         if intent not in self._HANDLED_INTENTS:
             command = text.lower()
@@ -518,33 +704,11 @@ class API:
              screenshot.save(screenshot_path)
              print(f"Скриншот сохранен: {screenshot_path}")
              
-             from nlp_engine import client, use_new_sdk, model_name
-             if client and use_new_sdk:
-                 try:
-                     buf = io.BytesIO()
-                     screenshot.save(buf, format='PNG')
-                     image_bytes = buf.getvalue()
-                     
-                     from google import genai
-                     from google.genai import types
-                     
-                     response = client.models.generate_content(
-                         model=model_name,
-                         contents=[
-                             types.Content(parts=[
-                                 types.Part.from_text("Опиши что ты видишь на этом скриншоте экрана. Ответь коротко, на русском языке."),
-                                 types.Part.from_bytes(data=image_bytes, mime_type="image/png")
-                             ])
-                         ]
-                     )
-                     description = response.text
-                     print(f"Описание экрана: {description}")
-                     return description
-                 except Exception as e:
-                     print(f"Ошибка анализа скриншота через Gemini: {e}")
-                     return "Я сделал снимок экрана, но не смог его проанализировать."
+             from nlp_engine import llm
+             if llm:
+                 return "Я сделал снимок экрана, но локальная текстовая модель Llama 3 не поддерживает анализ изображений."
              else:
-                 return "Я сделал снимок экрана, но ИИ для анализа недоступен."
+                 return "Я сделал снимок экрана, но ИИ недоступен."
          except Exception as e:
              print(f"Ошибка при снятии скриншота: {e}")
              return f"Ошибка при снятии скриншота: {e}"
@@ -597,14 +761,16 @@ class API:
         import math
         import string
 
-        if _whisper_model is None:
+        if _whisper_model is None and _whisper_tiny is None:
             return {"status": "error", "message": "Модель Whisper не загружена"}
+
+        use_model = _whisper_model
 
         CHUNK = 1024
         FORMAT = pyaudio.paInt16
         CHANNELS = 1
         RATE = 16000
-        SILENCE_THRESHOLD = 500  
+        SILENCE_THRESHOLD = 500
         SILENCE_DURATION = 1.0 
         
         p = pyaudio.PyAudio()
@@ -615,107 +781,121 @@ class API:
                         frames_per_buffer=CHUNK)
         try:
             self.force_stop = False
-
-            frames = []
-            silent_chunks = 0
-            speaking = False
-            start_time = time.time()
             
-            print("Слушаю..." if not hasattr(self, '_listen_count') else ".", end="" if hasattr(self, '_listen_count') else "\n", flush=True)
-            self._listen_count = getattr(self, '_listen_count', 0) + 1
-            if self._listen_count % 10 == 0:
-                print(f"\n[Фоновое прослушивание активно, цикл #{self._listen_count}]")
-            
-            def get_rms(data):
-                count = len(data) / 2
-                format = "%dh" % (count)
-                import struct
-                shorts = struct.unpack(format, data)
-                sum_squares = 0.0
-                for sample in shorts:
-                    n = sample * (1.0 / 32768.0)
-                    sum_squares += n * n
-                return math.sqrt( sum_squares / count ) * 32768.0
-
             while not getattr(self, "force_stop", False):
-                 data = stream.read(CHUNK)
-                 rms = get_rms(data)
-                 is_speech = rms > SILENCE_THRESHOLD
-                 
-                 if is_speech:
-                     speaking = True
-                     silent_chunks = 0
-                     frames.append(data)
-                 elif speaking:
-                     frames.append(data)
-                     silent_chunks += 1
-                     if silent_chunks > int(RATE / CHUNK * SILENCE_DURATION):
+                frames = []
+                silent_chunks = 0
+                speaking = False
+                start_time = time.time()
+                
+                print("Слушаю..." if not hasattr(self, '_listen_count') else ".", end="" if hasattr(self, '_listen_count') else "\n", flush=True)
+                self._listen_count = getattr(self, '_listen_count', 0) + 1
+                if self._listen_count % 10 == 0:
+                    print(f"\n[Фоновое прослушивание активно, цикл #{self._listen_count}]")
+                
+                def get_rms(data):
+                    count = len(data) / 2
+                    format = "%dh" % (count)
+                    import struct
+                    shorts = struct.unpack(format, data)
+                    sum_squares = 0.0
+                    for sample in shorts:
+                        n = sample * (1.0 / 32768.0)
+                        sum_squares += n * n
+                    return math.sqrt( sum_squares / count ) * 32768.0
+
+                while not getattr(self, "force_stop", False):
+                     data = stream.read(CHUNK)
+                     rms = get_rms(data)
+                     
+                     is_speech = rms > SILENCE_THRESHOLD
+                     
+                     if is_speech:
+                         speaking = True
+                         silent_chunks = 0
+                         frames.append(data)
+                     elif speaking:
+                         frames.append(data)
+                         silent_chunks += 1
+                         if silent_chunks > int(RATE / CHUNK * SILENCE_DURATION):
+                             break
+
+                     if time.time() - start_time > 3 and not speaking:
                          break
+                     elif time.time() - start_time > 15:
+                         break
+                         
+                if getattr(self, "force_stop", False):
+                     return {"status": "ignore", "text": ""}
+                         
+                if not frames:
+                     continue
 
-                 if time.time() - start_time > 3 and not speaking:
-                     break
-                 elif time.time() - start_time > 15:
-                     break
-                     
-            if getattr(self, "force_stop", False):
-                 return {"status": "ignore", "text": ""}
-                     
-            if not frames:
-                 return {"status": "ignore", "text": ""}
+                audio_data = b''.join(frames)
+                
+                audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
-            audio_data = b''.join(frames)
-            
-            audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
+                # Шумоподавление
+                try:
+                    import noisereduce as nr
+                    audio_np = nr.reduce_noise(y=audio_np, sr=RATE, stationary=False, prop_decrease=0.8)
+                except ImportError:
+                    pass
+                except Exception as e:
+                    print(f"[NoiseReduce] Ошибка очистки: {e}")
 
-            # Определяем язык: фиксированный или авто
-            whisper_lang = self.current_language  # None = авто-определение
-            whisper_prompt = WHISPER_PROMPTS.get(whisper_lang, None) if whisper_lang else None
+                whisper_lang = self.current_language
+                whisper_prompt = WHISPER_PROMPTS.get(whisper_lang, None) if whisper_lang else "Макс, привет. Max, open browser. Сәлем. Русский. English. Қазақша."
 
-            segments_list = []
-            segments, info = _whisper_model.transcribe(
-                audio_np,
-                language=whisper_lang,
-                vad_filter=True,
-                beam_size=5,
-                initial_prompt=whisper_prompt,
-                condition_on_previous_text=False,
-                no_speech_threshold=0.5,
-                compression_ratio_threshold=2.4,
-            )
-            for segment in segments:
-                segments_list.append(segment.text)
-            text = "".join(segments_list).strip()
+                segments_list = []
+                t0 = time.time()
+                segments, info = use_model.transcribe(
+                    audio_np,
+                    language=whisper_lang,
+                    vad_filter=True,
+                    beam_size=3 if use_model is _whisper_tiny else 5,
+                    initial_prompt=whisper_prompt,
+                    condition_on_previous_text=False,
+                    no_speech_threshold=0.5,
+                    compression_ratio_threshold=2.4,
+                )
+                for segment in segments:
+                    segments_list.append(segment.text)
+                text = "".join(segments_list).strip()
+                model_label = "tiny" if use_model is _whisper_tiny else "medium"
+                
+                # Определённый язык
+                detected_lang = getattr(info, 'language', 'ru') or 'ru'
+                self.detected_language = detected_lang
+                
+                if detected_lang not in ["ru", "en", "kk"]:
+                    continue
 
-            # Определённый язык
-            detected_lang = getattr(info, 'language', 'ru') or 'ru'
-            self.detected_language = detected_lang
-            print(f"[Whisper] Язык: {detected_lang} (уверенность: {getattr(info, 'language_probability', 0):.0%})")
-
-            if not text:
-               return {"status": "ignore", "text": ""}
-            
-            command = text.lower()
-            command = _correct_text(command, detected_lang)
-            print(f"Распознано [{detected_lang}]: {command}")
-            
-            command_clean = command.translate(str.maketrans('', '', string.punctuation))
-            
-            if not getattr(self, "is_awake", False):
-                 found, rest_command = _detect_wake_word(command_clean, detected_lang)
-                 if found:
-                      self.is_awake = True
-                      if rest_command:
-                          return {"status": "success", "text": rest_command, "language": detected_lang}
-                      # Приветствие на языке пользователя
-                      wake_texts = {"ru": "Я вас слушаю.", "en": "I'm listening.", "kk": "Мен тыңдап тұрмын."}
-                      wake_text = wake_texts.get(detected_lang, "Я вас слушаю.")
-                      wake_audio = self._get_elevenlabs_audio(wake_text)
-                      return {"status": "wake", "text": wake_text, "audio_base64": wake_audio, "language": detected_lang}
-                 else:
-                      return {"status": "ignore", "text": ""}
-            
-            self.is_awake = False
-            return {"status": "success", "text": command_clean, "language": detected_lang}
+                if not text:
+                   continue
+                
+                print(f"[Whisper] Распознано за {time.time()-t0:.2f}s (модель: {model_label}, язык: {detected_lang})")
+                
+                command = text.lower()
+                command = _correct_text(command, detected_lang)
+                print(f"Распознано [{detected_lang}]: {command}")
+                
+                command_clean = command.translate(str.maketrans('', '', string.punctuation))
+                
+                if not getattr(self, "is_awake", False):
+                     found, rest_command = _detect_wake_word(command_clean, detected_lang)
+                     if found:
+                          self.is_awake = True
+                          if rest_command:
+                              return {"status": "success", "text": rest_command, "language": detected_lang}
+                          wake_text = "Я слушаю."
+                          wake_audio = self._get_silero_audio(wake_text)
+                          return {"status": "wake", "text": wake_text, "audio_base64": wake_audio, "language": detected_lang}
+                     else:
+                          continue
+                
+                self.is_awake = False
+                return {"status": "success", "text": command_clean, "language": detected_lang}
 
         except Exception as e:
             return {"status": "error", "message": f"Ошибка распознавания: {str(e)}"}
