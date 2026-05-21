@@ -1,6 +1,7 @@
 import webview
 import os
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN_WARNING"] = "1"
 import sys
 import subprocess
 import threading
@@ -153,8 +154,6 @@ def _init_whisper():
     print("[Whisper] ОШИБКА: Не удалось загрузить модель")
     _whisper_model = None
 
-_init_whisper()
-
 _audio_cache = {}
 _audio_cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".audio_cache")
 os.makedirs(_audio_cache_dir, exist_ok=True)
@@ -167,8 +166,7 @@ def _load_audio_cache():
                 key = f[:-4]
                 with open(os.path.join(_audio_cache_dir, f), "r", encoding="utf-8") as fh:
                     _audio_cache[key] = fh.read()
-        if _audio_cache:
-            print(f"[AudioCache] Загружено {len(_audio_cache)} кэшированных аудио")
+        pass
     except Exception as e:
         print(f"[AudioCache] Ошибка загрузки: {e}")
 
@@ -222,8 +220,7 @@ class API:
     def speak(self, text):
         if not pyttsx3:
             return
-
-        """Локальный синтез через pyttsx3 (резервный)"""    
+  
         def _speak():
             try:
                 engine = pyttsx3.init()
@@ -271,6 +268,21 @@ class API:
             print(f"[AudioCache] HIT: {text[:40]}...")
             return cached
 
+        import re
+        if re.search(r"[әіңғүұқөһӘІҢҒҮҰҚӨҺ]", text):
+            try:
+                from gtts import gTTS
+                import io
+                tts = gTTS(text, lang='kk')
+                audio_buf = io.BytesIO()
+                tts.write_to_fp(audio_buf)
+                audio_b64 = base64.b64encode(audio_buf.getvalue()).decode('utf-8')
+                _save_to_audio_cache(text, audio_b64)
+                return audio_b64
+            except Exception as e:
+                print(f"[gTTS] Ошибка: {e}")
+                return None
+
         try:
             import io
             import time as _time
@@ -282,12 +294,11 @@ class API:
             t0 = _time.time()
             global _silero_ru_model
             if '_silero_ru_model' not in globals() or _silero_ru_model is None:
-                print("[Silero] Загрузка модели v5_5_ru...")
+                pass  # print("[Silero] Загрузка модели v5_5_ru...")
                 _silero_ru_model, _ = silero_tts(language='ru', speaker='v5_5_ru')
-                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                _silero_ru_model = _silero_ru_model.to(device)
+                device = torch.device('cpu')
+                _silero_ru_model.to(device)
 
-            print("[Silero] Синтез речи...")
             audio_tensor = _silero_ru_model.apply_tts(text=text, speaker='aidar', sample_rate=24000)
             
             audio_np = audio_tensor.cpu().numpy()
@@ -295,12 +306,10 @@ class API:
             wavfile.write(audio_buf, 24000, audio_np)
             
             audio_b64 = base64.b64encode(audio_buf.getvalue()).decode('utf-8')
-            elapsed = _time.time() - t0
-            print(f"[Silero] Синтезировано за {elapsed:.2f}s ({len(audio_buf.getvalue())//1024}KB)")
             _save_to_audio_cache(text, audio_b64)
             return audio_b64
         except Exception as e:
-            print(f"[Silero] Ошибка синтеза: {e}")
+            pass  # print(f"[Silero] Ошибка синтеза: {e}")
             return None
     def _preload_common_audio(self):
         common_phrases = [
@@ -330,8 +339,6 @@ class API:
                 pass
             import time
             time.sleep(0.3)
-        if preloaded:
-            print(f"[AudioCache] Предзагружено {preloaded} новых фраз")
 
     """База данных"""
     def create_chat_session(self, title="Новый чат"):
@@ -359,9 +366,10 @@ class API:
     """Команды"""
     _HANDLED_INTENTS = {
         "OPEN_BROWSER", "OPEN_CALC", "OPEN_NOTEPAD", "OPEN_PICTURES",
-        "OPEN_MUSIC", "OPEN_DOWNLOADS", "YOUTUBE", "SEARCH", "GET_STATS",
+        "OPEN_MUSIC", "OPEN_DOWNLOADS", "YOUTUBE", "SEARCH",
         "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "MEDIA_PLAY_PAUSE",
-        "MEDIA_NEXT", "MEDIA_PREV", "SYS_SLEEP", "SYS_SHUTDOWN", "SPOTIFY"
+        "MEDIA_NEXT", "MEDIA_PREV", "SYS_SLEEP", "SYS_SHUTDOWN", "SPOTIFY",
+        "CREATE_FOLDER", "RENAME_FILE", "DELETE_FILE", "OPEN_FILE"
     }
     _SPLIT_WORDS = [
         " а также ", " а потом ", " потом ", " затем ", " после этого ", " и ещё ", " плюс ",
@@ -542,7 +550,6 @@ class API:
             import os
             os.system("shutdown /s /t 5")
         elif intent == "SEARCH":
-            # Умный поиск: ищем в DuckDuckGo, скармливаем результаты Llama 3
             try:
                 from duckduckgo_search import DDGS
                 with DDGS() as ddgs:
@@ -558,10 +565,17 @@ class API:
                 import webbrowser
                 webbrowser.open(f"https://www.google.com/search?q={original}")
                 response_text = f"Не удалось выполнить умный поиск, открыл Google."
+        elif intent == "CREATE_FOLDER":
+            response_text = self.create_folder(original)
+        elif intent == "RENAME_FILE":
+            response_text = self.rename_file_or_folder(original)
+        elif intent == "DELETE_FILE":
+            response_text = self.delete_file_or_folder(original)
+        elif intent == "OPEN_FILE":
+            response_text = self.open_file_by_name(original)
 
         if intent not in self._HANDLED_INTENTS:
             command = text.lower()
-            # Мультиязычные глаголы команд
             if any(v in command for v in ["открой", "open", "аш"]):
                 result = self.open_app_by_name(command)
                 if result:
@@ -580,9 +594,160 @@ class API:
                     response_text = result
 
         return {"intent": intent, "response": response_text}
+
+    def _extract_name_from_command(self, text, verbs, object_words):
+        t = text.lower().strip()
+        for v in verbs:
+            if t.startswith(v):
+                t = t[len(v):].strip()
+                break
+        for ow in object_words:
+            if t.startswith(ow):
+                t = t[len(ow):].strip()
+                break
+        return t.strip()
+
+    def _resolve_location(self, name):
+        base_dir = os.path.expanduser("~")
+        onedrive_dir = os.path.join(base_dir, "OneDrive")
+        
+        def get_path(folder):
+            onedrive_path = os.path.join(onedrive_dir, folder)
+            if os.path.exists(onedrive_path):
+                return onedrive_path
+            return os.path.join(base_dir, folder)
+
+        location_map = {
+            "на рабочем столе": get_path("Desktop"),
+            "on desktop": get_path("Desktop"),
+            "в документах": get_path("Documents"),
+            "in documents": get_path("Documents"),
+            "в загрузках": get_path("Downloads"),
+            "in downloads": get_path("Downloads"),
+        }
+        name_lower = name.lower()
+        for keyword, path in location_map.items():
+            if keyword in name_lower:
+                clean_name = name_lower.replace(keyword, "").strip()
+                return clean_name, path
+        return name, get_path("Desktop")
+
+    def create_folder(self, text):
+        verbs = ["создай", "сделай", "create", "make", "жаса", "құр"]
+        objects = ["папку", "папка", "каталог", "директорию", "folder", "directory", "қалта", "новую папку", "новая папка"]
+        folder_name = self._extract_name_from_command(text, verbs, objects)
+        if not folder_name:
+            return "Не удалось понять имя папки."
+        folder_name, base_path = self._resolve_location(folder_name)
+        if not folder_name:
+            return "Не удалось понять имя папки."
+        full_path = os.path.join(base_path, folder_name)
+        try:
+            os.makedirs(full_path, exist_ok=True)
+            return f"Папка '{folder_name}' создана в {os.path.basename(base_path)}."
+        except Exception as e:
+            return f"Ошибка создания папки: {e}"
+
+    def rename_file_or_folder(self, text):
+        verbs = ["переименуй", "переназови", "назови", "rename", "атын өзгерт", "қайта ата"]
+        objects = ["файл", "папку", "папка", "каталог", "file", "folder", "directory", "файлды", "қалтаны"]
+        name_part = self._extract_name_from_command(text, verbs, objects)
+        separators = [" в ", " на ", " to ", " into "]
+        old_name = None
+        new_name = None
+        for sep in separators:
+            if sep in name_part:
+                parts = name_part.split(sep, 1)
+                old_name = parts[0].strip()
+                new_name = parts[1].strip()
+                break
+        if not old_name or not new_name:
+            return "Не понял старое и новое имя. Скажите: переименуй папку старое в новое."
+        new_name_clean, base_path = self._resolve_location(new_name)
+        old_name_clean, _ = self._resolve_location(old_name)
+        old_name_clean = old_name_clean or old_name
+        new_name_clean = new_name_clean or new_name
+        old_path = os.path.join(base_path, old_name_clean)
+        new_path = os.path.join(base_path, new_name_clean)
+        if not os.path.exists(old_path):
+            return f"Не найдено: '{old_name_clean}' в {os.path.basename(base_path)}."
+        try:
+            os.rename(old_path, new_path)
+            return f"'{old_name_clean}' переименовано в '{new_name_clean}'."
+        except Exception as e:
+            return f"Ошибка переименования: {e}"
+
+    def delete_file_or_folder(self, text):
+        import shutil
+        verbs = ["удали", "убери", "сотри", "delete", "remove", "erase", "жой", "өшір"]
+        objects = ["файл", "папку", "папка", "каталог", "file", "folder", "directory", "файлды", "папканы"]
+        target = self._extract_name_from_command(text, verbs, objects)
+        if not target:
+            return "Не удалось понять, что удалять."
+        target, base_path = self._resolve_location(target)
+        if not target:
+            return "Не удалось понять, что удалять."
+        full_path = os.path.join(base_path, target)
+        if not os.path.exists(full_path):
+            return f"Не найдено: '{target}' в {os.path.basename(base_path)}."
+        try:
+            if os.path.isdir(full_path):
+                shutil.rmtree(full_path)
+            else:
+                os.remove(full_path)
+            return f"'{target}' удалено."
+        except Exception as e:
+            return f"Ошибка удаления: {e}"
+
+    def open_file_by_name(self, text):
+        from difflib import SequenceMatcher
+        verbs = ["открой", "запусти", "покажи", "open", "launch", "show", "аш", "қос"]
+        objects = ["файл", "документ", "file", "document", "файлды", "құжат"]
+        target = self._extract_name_from_command(text, verbs, objects)
+        if not target:
+            return "Не понял имя файла."
+        target_clean, location = self._resolve_location(target)
+        if not target_clean:
+            return "Не понял имя файла."
+        search_dirs = list(dict.fromkeys([
+            location,
+            os.path.join(os.path.expanduser("~"), "Desktop"),
+            os.path.join(os.path.expanduser("~"), "Documents"),
+            os.path.join(os.path.expanduser("~"), "Downloads"),
+        ]))
+        best_match = None
+        best_score = 0
+        target_lower = target_clean.lower()
+        for search_dir in search_dirs:
+            if not os.path.isdir(search_dir):
+                continue
+            try:
+                for entry in os.listdir(search_dir):
+                    entry_path = os.path.join(search_dir, entry)
+                    if not os.path.isfile(entry_path):
+                        continue
+                    name_no_ext = os.path.splitext(entry)[0].lower()
+                    if target_lower == name_no_ext or target_lower == entry.lower():
+                        best_match = entry_path
+                        best_score = 1.0
+                        break
+                    score = SequenceMatcher(None, target_lower, name_no_ext).ratio()
+                    if score > best_score and score >= 0.6:
+                        best_score = score
+                        best_match = entry_path
+            except PermissionError:
+                continue
+            if best_score == 1.0:
+                break
+        if not best_match:
+            return f"Файл '{target_clean}' не найден."
+        try:
+            os.startfile(best_match)
+            return f"Открываю '{os.path.basename(best_match)}'."
+        except Exception as e:
+            return f"Ошибка открытия файла: {e}"
         
     def open_app_by_name(self, command):
-         # Мультиязычные глаголы для извлечения имени приложения
          open_verbs = ["открой", "запусти", "включи", "open", "launch", "start", "run", "аш", "қос", "іске қос"]
          app_name = None
          for verb in open_verbs:
@@ -744,15 +909,7 @@ class API:
         except Exception as e:
             return f"Ошибка: {str(e)}"
 
-    def get_system_stats(self):
-        try:
-            import psutil
-            cpu = psutil.cpu_percent()
-            ram = psutil.virtual_memory().percent
-            return {"cpu": cpu, "ram": ram}
-        except Exception:
-            import random
-            return {"cpu": random.randint(10, 40), "ram": random.randint(30, 60)}
+
 
     def listen_voice(self):
         import pyaudio
@@ -760,11 +917,6 @@ class API:
         import time
         import math
         import string
-
-        if _whisper_model is None and _whisper_tiny is None:
-            return {"status": "error", "message": "Модель Whisper не загружена"}
-
-        use_model = _whisper_model
 
         CHUNK = 1024
         FORMAT = pyaudio.paInt16
@@ -805,7 +957,10 @@ class API:
                     return math.sqrt( sum_squares / count ) * 32768.0
 
                 while not getattr(self, "force_stop", False):
-                     data = stream.read(CHUNK)
+                     try:
+                         data = stream.read(CHUNK, exception_on_overflow=False)
+                     except Exception:
+                         continue
                      rms = get_rms(data)
                      
                      is_speech = rms > SILENCE_THRESHOLD
@@ -842,10 +997,18 @@ class API:
                 except ImportError:
                     pass
                 except Exception as e:
-                    print(f"[NoiseReduce] Ошибка очистки: {e}")
+                    pass
 
                 whisper_lang = self.current_language
                 whisper_prompt = WHISPER_PROMPTS.get(whisper_lang, None) if whisper_lang else "Макс, привет. Max, open browser. Сәлем. Русский. English. Қазақша."
+
+                if _whisper_model is None:
+                    print("\n[Загрузка Whisper модели...]")
+                    _init_whisper()
+                use_model = _whisper_model
+
+                if use_model is None:
+                     return {"status": "error", "message": "Не удалось загрузить Whisper"}
 
                 segments_list = []
                 t0 = time.time()
@@ -853,7 +1016,7 @@ class API:
                     audio_np,
                     language=whisper_lang,
                     vad_filter=True,
-                    beam_size=3 if use_model is _whisper_tiny else 5,
+                    beam_size=5,
                     initial_prompt=whisper_prompt,
                     condition_on_previous_text=False,
                     no_speech_threshold=0.5,
@@ -862,7 +1025,6 @@ class API:
                 for segment in segments:
                     segments_list.append(segment.text)
                 text = "".join(segments_list).strip()
-                model_label = "tiny" if use_model is _whisper_tiny else "medium"
                 
                 # Определённый язык
                 detected_lang = getattr(info, 'language', 'ru') or 'ru'
@@ -873,12 +1035,9 @@ class API:
 
                 if not text:
                    continue
-                
-                print(f"[Whisper] Распознано за {time.time()-t0:.2f}s (модель: {model_label}, язык: {detected_lang})")
-                
+
                 command = text.lower()
                 command = _correct_text(command, detected_lang)
-                print(f"Распознано [{detected_lang}]: {command}")
                 
                 command_clean = command.translate(str.maketrans('', '', string.punctuation))
                 

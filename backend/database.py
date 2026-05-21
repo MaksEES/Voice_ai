@@ -35,7 +35,7 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print(f"[DB] База данных инициализирована: {DB_PATH}")
+
 
 def create_session(title="Новый чат"):
     conn = get_connection()

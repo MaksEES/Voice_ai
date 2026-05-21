@@ -8,41 +8,37 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(project_root, '.env')
 load_dotenv(dotenv_path=env_path)
 
-llm = None
+import requests
 
-def init_ai():
-    global llm
-    model_path = os.getenv("LLM_MODEL_PATH")
-    
-    if not model_path or not os.path.exists(model_path):
-        print(f"[LLM] Ошибка: файл модели не найден: {model_path}")
-        print("[LLM] Проверь переменную LLM_MODEL_PATH в файле .env")
-        llm = None
-        return
-    
-    try:
-        from llama_cpp import Llama
-        print(f"[LLM] Загрузка Llama 3 из: {os.path.basename(model_path)}...")
-        print("[LLM] Это займёт 10-20 секунд...")
+def _call_openrouter(messages, max_tokens=256, temperature=0.7):
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise Exception("OPENROUTER_API_KEY не установлен в .env")
         
-        llm = Llama(
-            model_path=model_path,
-            n_ctx=2048,
-            n_gpu_layers=-1,
-            n_threads=None,
-            verbose=False,
-        )
-        print("[LLM] ✓ Llama 3 загружена и готова к работе!")
-    except ImportError:
-        print("[LLM] Ошибка: библиотека llama-cpp-python не установлена!")
-        print("[LLM] Установи: pip install llama-cpp-python")
-        llm = None
-    except Exception as e:
-        print(f"[LLM] Ошибка загрузки модели: {e}")
-        llm = None
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    
+    payload = {
+        "model": "google/gemini-3.1-flash-lite",
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens
+    }
 
-
-init_ai()
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=15
+    )
+    
+    if response.status_code == 200:
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"OpenRouter Error {response.status_code}: {response.text}")
 """ключевые слова"""
 INTENT_KEYWORDS = {
     "OPEN_BROWSER": {
@@ -66,14 +62,6 @@ INTENT_KEYWORDS = {
                   "аш", "қос"],
         "nouns": ["блокнот", "текстовый редактор", "редактор", "notepad", "заметки",
                   "блокнотты", "жазба"],
-    },
-    "GET_STATS": {
-        "verbs": ["покажи", "какая", "скажи", "проверь",
-                  "show", "check", "what",
-                  "көрсет", "тексер"],
-        "nouns": ["статистика", "нагрузка", "состояние", "система", "ресурсы", "память",
-                  "stats", "statistics", "system", "performance", "memory", "cpu",
-                  "жүйе", "жүктеме"],
     },
     "YOUTUBE": {
         "verbs": ["найди", "включи", "открой", "покажи", "запусти", "поищи",
@@ -114,12 +102,41 @@ INTENT_KEYWORDS = {
         "nouns": ["загрузки", "скачанное", "скачанные", "downloads", "загрузок",
                   "жүктеулер", "жүктеулерді"],
     },
+    "CREATE_FOLDER": {
+        "verbs": ["создай", "сделай", "новая", "новую",
+                  "create", "make", "new",
+                  "жаса", "құр"],
+        "nouns": ["папку", "папка", "каталог", "директорию", "директория",
+                  "folder", "directory",
+                  "папка", "папканы"],
+    },
+    "RENAME_FILE": {
+        "verbs": ["переименуй", "переназови", "назови",
+                  "rename",
+                  "атын өзгерт", "қайта ата"],
+        "nouns": ["файл", "папку", "папка", "каталог",
+                  "file", "folder", "directory",
+                  "файлды", "қалтаны"],
+    },
+    "DELETE_FILE": {
+        "verbs": ["удали", "убери", "сотри", "убрать",
+                  "delete", "remove", "erase",
+                  "жой", "өшір"],
+        "nouns": ["файл", "папку", "папка", "каталог",
+                  "file", "folder", "directory",
+                  "файлды", "қалтаны"],
+    },
+    "OPEN_FILE": {
+        "verbs": ["открой", "запусти", "покажи",
+                  "open", "launch", "show",
+                  "аш", "қос"],
+        "nouns": ["файл", "документ",
+                  "file", "document",
+                  "файлды", "құжат"],
+    },
 }
 
 INTENT_PHRASES = {
-    "GET_STATS": ["как дела у системы", "состояние системы", "что с системой",
-                  "system status", "how is the system",
-                  "жүйе қалай"],
     "SEARCH": ["что такое", "кто такой", "что значит",
                "what is", "who is", "what does",
                "не деген", "кім деген"],
@@ -153,7 +170,10 @@ Possible intents:
 - OPEN_PICTURES — open pictures folder
 - OPEN_MUSIC — open music folder
 - OPEN_DOWNLOADS — open downloads folder
-- GET_STATS — show system statistics
+- CREATE_FOLDER — create a new folder/directory
+- RENAME_FILE — rename a file or folder
+- DELETE_FILE — delete a file or folder
+- OPEN_FILE — open a specific file (document, image, etc.)
 - UNKNOWN — if no intent matches
 
 User text: "{text}"
@@ -163,33 +183,39 @@ Reply ONLY with JSON, no explanations:
 
 
 def _classify_with_llm(text):
-    if not llm:
+    if not os.getenv("OPENROUTER_API_KEY"):
         return None, 0
     
     try:
         prompt = INTENT_CLASSIFY_PROMPT.replace("{text}", text[:200])
         
-        response = llm.create_chat_completion(
+        result_text = _call_openrouter(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            max_tokens=64,
-            response_format={"type": "json_object"},
+            max_tokens=64
         )
         
-        result_text = response["choices"][0]["message"]["content"].strip()
+        clean_text = result_text.strip()
+        if clean_text.startswith("```json"):
+            clean_text = clean_text[7:]
+        if clean_text.startswith("```"):
+            clean_text = clean_text[3:]
+        if clean_text.endswith("```"):
+            clean_text = clean_text[:-3]
+        clean_text = clean_text.strip()
         
-        data = json.loads(result_text)
+        data = json.loads(clean_text)
         intent = data.get("intent", "UNKNOWN")
         confidence = float(data.get("confidence", 0))
         
         if intent != "UNKNOWN" and confidence >= 0.6:
-            print(f"[NLP] Llama классификация: {intent} ({confidence:.0%})")
+            print(f"[NLP] OpenRouter классификация: {intent} ({confidence:.0%})")
             return intent, confidence
         
         return None, 0
         
     except Exception as e:
-        print(f"[NLP] Ошибка Llama классификации: {e}")
+        print(f"[NLP] Ошибка OpenRouter классификации: {e}")
         return None, 0
 
 
@@ -199,7 +225,6 @@ class NLPProcessor:
             "OPEN_BROWSER": [r"(?:открой|запусти|включи) (?:браузер|интернет|гугл|сайт)", r"open (?:browser|internet|chrome)", r"launch browser", r"(?:браузерді|интернетті) аш"],
             "OPEN_CALC": [r"(?:открой|запусти) (?:калькулятор|счеты)", r"open calculator", r"launch calculator", r"калькуляторды аш"],
             "OPEN_NOTEPAD": [r"(?:открой|запусти) (?:блокнот|текстовый редактор)", r"open (?:notepad|text editor)", r"launch notepad", r"блокнотты аш"],
-            "GET_STATS": [r"(?:покажи|какая) (?:статистика|нагрузка|состояние)", r"как дела у системы", r"(?:show|check) (?:stats|system|performance)", r"system status", r"жүйе (?:қалай|жағдайы)"],
             "YOUTUBE": [r"(?:включи|найди|открой) (.+) (?:на|в) (?:ютубе|youtube|ютуб)", r"видео про (.+)", r"(?:find|search|play) (.+) on youtube", r"video about (.+)", r"youtube-тен (?:іздеу|тап)"],
             "SPOTIFY": [r"(?:включи|поставь|найди) (.+) (?:в|на) (?:спотифай|spotify)"],
             "VOLUME_UP": [r"(?:сделай|) (?:погромче|громче)", r"прибавь звук", r"volume up"],
@@ -214,6 +239,10 @@ class NLPProcessor:
             "OPEN_PICTURES": [r"открой (?:фото|картинки|галерею)", r"открой папку с картинками", r"open (?:photos|pictures|gallery)", r"(?:суреттерді|фотоларды) аш"],
             "OPEN_MUSIC": [r"открой (?:музыку|музыка)", r"открой папку с музыкой", r"open music", r"play music", r"музыканы аш"],
             "OPEN_DOWNLOADS": [r"открой (?:загрузки|скачанное)", r"открой папку загрузок", r"open downloads", r"жүктеулерді аш"],
+            "CREATE_FOLDER": [r"(?:создай|сделай) (?:папку|каталог|директорию) (.+)", r"(?:новая|новую) (?:папку|папка) (.+)", r"(?:create|make) (?:folder|directory) (.+)", r"(?:жаса|құр) қалта (.+)"],
+            "RENAME_FILE": [r"(?:переименуй|переназови) (?:файл|папку|каталог) (.+)", r"rename (?:file|folder) (.+)", r"(?:атын өзгерт|қайта ата) (.+)"],
+            "DELETE_FILE": [r"(?:удали|убери|сотри) (?:файл|папку|каталог) (.+)", r"(?:delete|remove|erase) (?:file|folder) (.+)", r"(?:жой|өшір) (.+)"],
+            "OPEN_FILE": [r"(?:открой|запусти|покажи) (?:файл|документ) (.+)", r"(?:open|launch|show) (?:file|document) (.+)", r"аш (?:файлды|құжат) (.+)"],
         }
 
     def analyze(self, text):
@@ -245,7 +274,7 @@ class NLPProcessor:
         
         llm_intent, confidence = _classify_with_llm(text)
         if llm_intent:
-            print(f"[NLP] Уровень 3 (Llama): {llm_intent}")
+            print(f"[NLP] Уровень 3 (OpenRouter): {llm_intent}")
             return llm_intent, text
         
         return "AI_THINK", text
@@ -291,13 +320,16 @@ class NLPProcessor:
                 "OPEN_BROWSER": "Запускаю ваш стандартный браузер. Готов к работе в сети.",
                 "OPEN_CALC": "Открываю калькулятор. Что будем считать?",
                 "OPEN_NOTEPAD": "Блокнот открыт. Можете записывать.",
-                "GET_STATS": "Проверяю состояние ресурсов... Система работает стабильно.",
                 "YOUTUBE": f"Включаю '{original_text}' на YouTube.",
                 "SPOTIFY": f"Ищу '{original_text}' в Spotify.",
                 "SEARCH": f"Ищу информацию про '{original_text}' в интернете.",
                 "OPEN_PICTURES": "Открываю вашу галерею.",
                 "OPEN_MUSIC": "Открываю папку с музыкой.",
                 "OPEN_DOWNLOADS": "Открываю папку загрузок.",
+                "CREATE_FOLDER": "Папка создана.",
+                "RENAME_FILE": "Переименовано.",
+                "DELETE_FILE": "Удалено.",
+                "OPEN_FILE": f"Открываю файл '{original_text}'.",
                 "VOLUME_UP": "Делаю погромче.",
                 "VOLUME_DOWN": "Делаю потише.",
                 "VOLUME_MUTE": "Звук отключен.",
@@ -311,13 +343,16 @@ class NLPProcessor:
                 "OPEN_BROWSER": "Launching your default browser. Ready to surf.",
                 "OPEN_CALC": "Opening calculator. What shall we compute?",
                 "OPEN_NOTEPAD": "Notepad is open. You can start writing.",
-                "GET_STATS": "Checking system resources... System is running smoothly.",
                 "YOUTUBE": f"Playing '{original_text}' on YouTube.",
                 "SPOTIFY": f"Searching for '{original_text}' on Spotify.",
                 "SEARCH": f"Searching for '{original_text}' on the internet.",
                 "OPEN_PICTURES": "Opening your photo gallery.",
                 "OPEN_MUSIC": "Opening your music folder.",
                 "OPEN_DOWNLOADS": "Opening your downloads folder.",
+                "CREATE_FOLDER": "Folder created.",
+                "RENAME_FILE": "Renamed.",
+                "DELETE_FILE": "Deleted.",
+                "OPEN_FILE": f"Opening file '{original_text}'.",
                 "VOLUME_UP": "Increasing volume.",
                 "VOLUME_DOWN": "Decreasing volume.",
                 "VOLUME_MUTE": "Volume muted.",
@@ -331,12 +366,15 @@ class NLPProcessor:
                 "OPEN_BROWSER": "Браузерді іске қосудамын. Желіге дайынмын.",
                 "OPEN_CALC": "Калькуляторды ашудамын. Нені есептейміз?",
                 "OPEN_NOTEPAD": "Блокнот ашылды. Жаза берсеңіз болады.",
-                "GET_STATS": "Жүйе ресурстарын тексерудемін... Жүйе тұрақты жұмыс істеуде.",
                 "YOUTUBE": f"YouTube-тен '{original_text}' іздеудемін.",
                 "SEARCH": f"Интернеттен '{original_text}' іздеудемін.",
                 "OPEN_PICTURES": "Сурет галереяңызды ашудамын.",
                 "OPEN_MUSIC": "Музыка қалтасын ашудамын.",
                 "OPEN_DOWNLOADS": "Жүктеулер қалтасын ашудамын.",
+                "CREATE_FOLDER": "Қалта жасалды.",
+                "RENAME_FILE": "Атауы өзгертілді.",
+                "DELETE_FILE": "Жойылды.",
+                "OPEN_FILE": f"'{original_text}' файлын ашудамын.",
             },
         }
 
@@ -344,7 +382,7 @@ class NLPProcessor:
         if intent in responses:
             return responses[intent]
 
-        if llm and intent == "AI_THINK":
+        if intent == "AI_THINK":
             try:
                 clean_text = original_text[:500]
                 lang_instructions = {
@@ -359,19 +397,16 @@ class NLPProcessor:
                     messages.extend(history)
                 messages.append({"role": "user", "content": clean_text})
                 
-                response = llm.create_chat_completion(
+                result = _call_openrouter(
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=256,
+                    max_tokens=256
                 )
                 
-                result = response["choices"][0]["message"]["content"].strip()
-                return result
+                return result.strip()
             except Exception as e:
                 error_msg = str(e)
-                print(f"AI ERROR (Llama): {error_msg}")
+                print(f"AI ERROR (OpenRouter): {error_msg}")
+                if "OPENROUTER_API_KEY" in error_msg:
+                    return "ИИ не настроен. Пожалуйста, добавьте OPENROUTER_API_KEY в файл .env."
                 return f"Ошибка ИИ: {error_msg[:100]}..."
-
-        
-        if not llm and intent == "AI_THINK":
-            return "ИИ не загружен. Убедитесь, что установлена библиотека 'llama-cpp-python' и путь к модели верен в файле .env."

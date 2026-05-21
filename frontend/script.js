@@ -217,11 +217,14 @@ async function backgroundListen() {
             addMessage(result.text, 'bot');
             if (result.audio_base64) {
                 const audio = new Audio("data:audio/mp3;base64," + result.audio_base64);
+                audio.onended = () => {
+                    startListening();
+                };
                 audio.play();
             } else {
-                window.pywebview.api.speak(result.text);
+                await window.pywebview.api.speak(result.text);
+                startListening();
             }
-            setTimeout(() => { startListening(); }, 300);
         } else if (result.status === "success" && result.text) {
             isListening = true;
             isBackgroundListening = false;
@@ -277,9 +280,15 @@ async function startListening() {
                 processCommand(result.text);
             } else if (result.status === "wake") {
                 addMessage(result.text, 'bot');
-                window.pywebview.api.speak(result.text);
-                if (isListening) {
-                    setTimeout(() => { startListening(); }, 300);
+                if (result.audio_base64) {
+                    const audio = new Audio("data:audio/mp3;base64," + result.audio_base64);
+                    audio.onended = () => {
+                        if (isListening) startListening();
+                    };
+                    audio.play();
+                } else {
+                    await window.pywebview.api.speak(result.text);
+                    if (isListening) startListening();
                 }
             } else if (result.status === "ignore") {
                 if (isListening) {

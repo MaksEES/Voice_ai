@@ -101,8 +101,6 @@ class AppResolver:
             self._index = deduped
             self._index_ready = True
 
-        print(f"[AppResolver] Indexed {len(self._index)} apps")
-
     def _scan_start_menu(self, index_list):
         dirs = []
         programdata = os.environ.get("PROGRAMDATA", "")
@@ -189,8 +187,7 @@ class AppResolver:
             except Exception as e:
                 print(f"[AppResolver] Steam scan error in {steamapps}: {e}")
 
-        if game_count:
-            print(f"[AppResolver] Found {game_count} Steam games")
+        pass
 
     def _find_steam_libraries(self):
         libraries = []
