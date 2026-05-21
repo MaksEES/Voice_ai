@@ -156,17 +156,28 @@ def _fuzzy_find(word, candidates, threshold=0.75):
             best_match = candidate
     return best_match, best_score
 
-"""вопрос к Llama 3"""
+"""Классификация через Gemini 3.1"""
+_EXPLICIT_SEARCH_MARKERS = [
+    "в интернете", "в гугле", "в сети", "загугли", "погугли", "в google",
+    "search for", "search the", "google it", "look up", "on the internet",
+    "интернеттен", "іздеу",
+]
+
 INTENT_CLASSIFY_PROMPT = """You are an intent classifier for a voice assistant.
 The user may speak in Russian, English, or Kazakh.
 Classify the user's intent from the list below. Reply STRICTLY in JSON format.
+
+IMPORTANT: Use SEARCH ONLY when the user EXPLICITLY asks to search the internet
+(e.g. "найди в интернете", "загугли", "поищи в гугле", "search online").
+General knowledge questions ("what is X", "who is Y", "какая самая длинная река")
+should be classified as UNKNOWN — the AI will answer them directly.
 
 Possible intents:
 - OPEN_BROWSER — open browser / internet
 - OPEN_CALC — open calculator
 - OPEN_NOTEPAD — open notepad / text editor
 - YOUTUBE — find video on YouTube
-- SEARCH — search the internet
+- SEARCH — ONLY explicit web search requests
 - OPEN_PICTURES — open pictures folder
 - OPEN_MUSIC — open music folder
 - OPEN_DOWNLOADS — open downloads folder
@@ -174,7 +185,7 @@ Possible intents:
 - RENAME_FILE — rename a file or folder
 - DELETE_FILE — delete a file or folder
 - OPEN_FILE — open a specific file (document, image, etc.)
-- UNKNOWN — if no intent matches
+- UNKNOWN — general questions, conversations, or no match
 
 User text: "{text}"
 
@@ -207,6 +218,12 @@ def _classify_with_llm(text):
         data = json.loads(clean_text)
         intent = data.get("intent", "UNKNOWN")
         confidence = float(data.get("confidence", 0))
+        
+        if intent == "SEARCH":
+            text_lower = text.lower()
+            if not any(marker in text_lower for marker in _EXPLICIT_SEARCH_MARKERS):
+                print(f"[NLP] OpenRouter хотел SEARCH, но нет явного маркера → AI_THINK")
+                return None, 0
         
         if intent != "UNKNOWN" and confidence >= 0.6:
             print(f"[NLP] OpenRouter классификация: {intent} ({confidence:.0%})")

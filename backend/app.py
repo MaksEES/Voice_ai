@@ -23,7 +23,6 @@ except ImportError:
     sr = None
     
 _whisper_model = None
-_whisper_tiny = None 
 _silero_ru_model = None 
 WHISPER_PROMPTS = {
     "ru": (
@@ -122,7 +121,7 @@ def _load_model(model_size, device, compute_type):
     return WhisperModel(model_size, device=device, compute_type=compute_type)
 
 def _init_whisper():
-    global _whisper_model, _whisper_tiny
+    global _whisper_model
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -138,15 +137,9 @@ def _init_whisper():
 
     for device, compute_type, label in device_chain:
         try:
-            print(f"[Whisper] Пробую medium: {label}...")
-            _whisper_model = _load_model("medium", device, compute_type)
-            print(f"[Whisper] ✓ medium загружено: {label}")
-            try:
-                _whisper_tiny = _load_model("tiny", device, compute_type)
-                print(f"[Whisper] ✓ tiny загружено: {label}")
-            except Exception as e2:
-                print(f"[Whisper] ✗ tiny не загружено: {e2}")
-                _whisper_tiny = _whisper_model
+            print(f"[Whisper] Пробую large-v3-turbo: {label}...")
+            _whisper_model = _load_model("large-v3-turbo", device, compute_type)
+            print(f"[Whisper] ✓ large-v3-turbo загружено: {label}")
             return
         except Exception as e:
             print(f"[Whisper] ✗ {label}: {e}")
@@ -199,6 +192,8 @@ class API:
         self.detected_language = "ru"  
         init_db()
         self.app_resolver = AppResolver()
+        self._pyaudio_instance = None
+        self._audio_stream = None
         threading.Thread(target=self._preload_common_audio, daemon=True).start()
 
     def stop_listening(self):
@@ -269,18 +264,38 @@ class API:
             return cached
 
         import re
-        if re.search(r"[әіңғүұқөһӘІҢҒҮҰҚӨҺ]", text):
+        import tempfile
+        import subprocess
+        import os
+
+        # Проверка на казахский язык (специфичные буквы)
+        is_kazakh = bool(re.search(r"[әіңғүұқөһӘІҢҒҮҰҚӨҺ]", text))
+        # Проверка на английский (есть латиница, нет кириллицы)
+        is_english = bool(re.search(r"[a-zA-Z]", text)) and not bool(re.search(r"[а-яА-ЯёЁ]", text))
+
+        if is_kazakh or is_english:
+            voice = "kk-KZ-DauletNeural" if is_kazakh else "en-US-GuyNeural"
             try:
-                from gtts import gTTS
-                import io
-                tts = gTTS(text, lang='kk')
-                audio_buf = io.BytesIO()
-                tts.write_to_fp(audio_buf)
-                audio_b64 = base64.b64encode(audio_buf.getvalue()).decode('utf-8')
+                temp_path = os.path.join(tempfile.gettempdir(), f"edge_tts_{hash(text)}.mp3")
+                cmd = ["edge-tts", "--text", text, "--voice", voice, "--write-media", temp_path]
+                kwargs = {}
+                if sys.platform == "win32":
+                    kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+                
+                subprocess.run(cmd, check=True, **kwargs)
+                
+                with open(temp_path, "rb") as f:
+                    audio_b64 = base64.b64encode(f.read()).decode('utf-8')
+                
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+                    
                 _save_to_audio_cache(text, audio_b64)
                 return audio_b64
             except Exception as e:
-                print(f"[gTTS] Ошибка: {e}")
+                print(f"[Edge-TTS] Ошибка: {e}")
                 return None
 
         try:
@@ -859,24 +874,38 @@ class API:
     def describe_screen(self):
          try:
              import pyautogui
-             import os
              import io
              import base64 as b64
-             
+
              screenshot = pyautogui.screenshot()
-             
-             screenshot_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screen.png")
-             screenshot.save(screenshot_path)
-             print(f"Скриншот сохранен: {screenshot_path}")
-             
-             from nlp_engine import llm
-             if llm:
-                 return "Я сделал снимок экрана, но локальная текстовая модель Llama 3 не поддерживает анализ изображений."
-             else:
-                 return "Я сделал снимок экрана, но ИИ недоступен."
+             buf = io.BytesIO()
+             screenshot.save(buf, format="PNG")
+             img_b64 = b64.b64encode(buf.getvalue()).decode("utf-8")
+
+             lang = self.detected_language or "ru"
+             lang_prompts = {
+                 "ru": "Опиши кратко что изображено на экране (2-3 предложения, на русском).",
+                 "en": "Briefly describe what is shown on the screen (2-3 sentences, in English).",
+                 "kk": "Экранда не бейнеленгенін қысқаша сипатта (2-3 сөйлем, қазақша).",
+             }
+             prompt_text = lang_prompts.get(lang, lang_prompts["ru"])
+
+             from nlp_engine import _call_openrouter
+             result = _call_openrouter(
+                 messages=[{
+                     "role": "user",
+                     "content": [
+                         {"type": "text", "text": prompt_text},
+                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
+                     ]
+                 }],
+                 max_tokens=256,
+                 temperature=0.4
+             )
+             return result.strip()
          except Exception as e:
-             print(f"Ошибка при снятии скриншота: {e}")
-             return f"Ошибка при снятии скриншота: {e}"
+             print(f"Ошибка при анализе экрана: {e}")
+             return f"Я сделал снимок экрана, но произошла ошибка при анализе: {e}"
 
     def open_folder(self, folder_type):
         try:
@@ -909,32 +938,73 @@ class API:
         except Exception as e:
             return f"Ошибка: {str(e)}"
 
+    def _ensure_audio_stream(self):
+        """Persistent audio stream — opens once, reuses across listen_voice() calls"""
+        import pyaudio
+        if self._audio_stream is not None:
+            try:
+                if self._audio_stream.is_active():
+                    return self._audio_stream
+            except Exception:
+                pass
+            self._close_audio_stream()
 
+        if self._pyaudio_instance is None:
+            self._pyaudio_instance = pyaudio.PyAudio()
+
+        self._audio_stream = self._pyaudio_instance.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=16000,
+            input=True,
+            frames_per_buffer=1024
+        )
+        print("[Audio] Стрим микрофона открыт")
+        return self._audio_stream
+
+    def _close_audio_stream(self):
+        if self._audio_stream:
+            try:
+                self._audio_stream.stop_stream()
+                self._audio_stream.close()
+            except Exception:
+                pass
+            self._audio_stream = None
+        if self._pyaudio_instance:
+            try:
+                self._pyaudio_instance.terminate()
+            except Exception:
+                pass
+            self._pyaudio_instance = None
+        print("[Audio] Стрим микрофона закрыт")
 
     def listen_voice(self):
-        import pyaudio
         import numpy as np
         import time
         import math
         import string
 
         CHUNK = 1024
-        FORMAT = pyaudio.paInt16
-        CHANNELS = 1
         RATE = 16000
-        SILENCE_THRESHOLD = 500
+        SILENCE_THRESHOLD = 300
         SILENCE_DURATION = 1.0 
-        
-        p = pyaudio.PyAudio()
-        stream = p.open(format=FORMAT,
-                        channels=CHANNELS,
-                        rate=RATE,
-                        input=True,
-                        frames_per_buffer=CHUNK)
+
+        try:
+            stream = self._ensure_audio_stream()
+        except Exception as e:
+            return {"status": "error", "message": f"Ошибка микрофона: {str(e)}"}
+
         try:
             self.force_stop = False
-            
+
             while not getattr(self, "force_stop", False):
+                # Flush stale audio from buffer before each recording cycle
+                try:
+                    while stream.get_read_available() > CHUNK:
+                        stream.read(CHUNK, exception_on_overflow=False)
+                except Exception:
+                    pass
+
                 frames = []
                 silent_chunks = 0
                 speaking = False
@@ -993,7 +1063,7 @@ class API:
                 # Шумоподавление
                 try:
                     import noisereduce as nr
-                    audio_np = nr.reduce_noise(y=audio_np, sr=RATE, stationary=False, prop_decrease=0.8)
+                    audio_np = nr.reduce_noise(y=audio_np, sr=RATE, stationary=False, prop_decrease=0.3)
                 except ImportError:
                     pass
                 except Exception as e:
@@ -1057,11 +1127,8 @@ class API:
                 return {"status": "success", "text": command_clean, "language": detected_lang}
 
         except Exception as e:
+            self._close_audio_stream()
             return {"status": "error", "message": f"Ошибка распознавания: {str(e)}"}
-        finally:
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
 
 def run_app():
     current_dir = os.path.dirname(os.path.abspath(__file__))
